@@ -60,7 +60,7 @@ export const getToken = () => read(K_TOKEN)
 export const setToken = (t: string | null) => write(K_TOKEN, t)
 
 export const absUrl = (u: string | null): string | null => (u ? base + u : null)
-const fixUser = <T extends User>(u: T): T => ({ ...u, avatar_url: absUrl(u.avatar_url) })
+const fixUser = <T extends { avatar_url: string | null }>(u: T): T => ({ ...u, avatar_url: absUrl(u.avatar_url) })
 
 export class NetworkError extends Error {}
 export class ApiError extends Error {
@@ -161,6 +161,69 @@ export function imageToAvatar(file: File): Promise<string> {
       canvas.getContext('2d')!.drawImage(img, 0, 0, canvas.width, canvas.height)
       URL.revokeObjectURL(url)
       resolve(canvas.toDataURL('image/png'))
+    }
+    img.onerror = () => {
+      URL.revokeObjectURL(url)
+      reject(new Error('Image illisible.'))
+    }
+    img.src = url
+  })
+}
+
+// ---------- Messages ----------
+export type Author = Pick<User, 'id' | 'username' | 'avatar_url' | 'name_color' | 'name_font' | 'name_effect'>
+export type Message = {
+  id: string
+  channelId: string
+  author: Author
+  content: string
+  image_url: string | null
+  created: number
+  reactions: Record<string, string[]>
+}
+export const REACTION_EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '🔥', '🎉', '👀']
+
+export const fixMessage = (m: Message): Message => ({ ...m, author: fixUser(m.author), image_url: absUrl(m.image_url) })
+
+export async function listMessages(channelId: string, before?: string) {
+  const r = await call<{ messages: Message[]; hasMore: boolean }>(
+    'GET',
+    `/channels/${channelId}/messages` + (before ? `?before=${encodeURIComponent(before)}` : '')
+  )
+  return { messages: r.messages.map(fixMessage), hasMore: r.hasMore }
+}
+export async function sendMessage(channelId: string, content: string, image: string | null) {
+  const r = await call<{ message: Message }>('POST', `/channels/${channelId}/messages`, { content, image })
+  return fixMessage(r.message)
+}
+export const deleteMessage = (channelId: string, messageId: string) =>
+  call('DELETE', `/channels/${channelId}/messages/${messageId}`)
+export const toggleReaction = (channelId: string, messageId: string, emoji: string) =>
+  call('PUT', `/channels/${channelId}/messages/${messageId}/reactions`, { emoji })
+
+// Réduit une photo à 1280 px max (JPEG) pour l'envoyer dans un message
+export function imageToUpload(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const img = new Image()
+    const url = URL.createObjectURL(file)
+    img.onload = () => {
+      URL.revokeObjectURL(url)
+      const scale = Math.min(1, 1280 / Math.max(img.width, img.height))
+      const canvas = document.createElement('canvas')
+      canvas.width = Math.max(1, Math.round(img.width * scale))
+      canvas.height = Math.max(1, Math.round(img.height * scale))
+      const ctx = canvas.getContext('2d')!
+      ctx.fillStyle = '#ffffff'
+      ctx.fillRect(0, 0, canvas.width, canvas.height)
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
+      let quality = 0.82
+      let data = canvas.toDataURL('image/jpeg', quality)
+      while (data.length * 0.75 > 800 * 1024 && quality > 0.3) {
+        quality -= 0.15
+        data = canvas.toDataURL('image/jpeg', quality)
+      }
+      if (data.length * 0.75 > 800 * 1024) reject(new Error('Image trop lourde.'))
+      else resolve(data)
     }
     img.onerror = () => {
       URL.revokeObjectURL(url)

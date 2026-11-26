@@ -1,11 +1,11 @@
-# MonApp — Phase 2 (serveur sur ton PC)
+# MonApp — Phase 3 (messages en direct)
 
 - **Appli** (React + Vite) : `.exe` Windows (Electron) et `.apk` Android (Capacitor), compilés par GitHub Actions.
 - **Serveur** (dossier `serveur/`) : Node.js sans dépendances, à lancer sur ton PC (comme un serveur Minecraft).
 
 ## Ce qui marche
 Comptes en ligne (pseudo + mot de passe, code d'inscription), profil, statuts, serveurs, salons, codes d'invitation, rôles (propriétaire / admin / membre), exclusion de membres, liste des membres en ligne.
-Les messages arrivent à la Phase 3.
+Messages en temps réel, images, réactions emoji, suppression de messages (les siens, ou ceux des autres pour les admins).
 
 ## Lancer le serveur
 Voir `serveur/LISEZMOI.txt` : installe Node.js (LTS), puis double-clique sur `serveur/lancer-serveur.bat`.

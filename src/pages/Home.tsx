@@ -1,9 +1,11 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import * as api from '../lib/api'
 import { useAuth } from '../lib/auth'
 import Avatar from '../components/Avatar'
 import ServerModal from '../components/ServerModal'
+import ChatView from '../components/ChatView'
+import { startEvents, stopEvents, subscribe } from '../lib/events'
 import { STATUSES, nameStyle, statusLabel } from '../lib/nameStyle'
 
 type View = 'channels' | 'main' | 'members'
@@ -54,6 +56,23 @@ export default function Home() {
     const t = setInterval(() => void refreshServers(), 8000)
     return () => clearInterval(t)
   }, [refreshServers])
+
+  // Mises à jour instantanées envoyées par le serveur
+  const latest = useRef({ refreshServers, refreshMembers })
+  latest.current = { refreshServers, refreshMembers }
+  useEffect(() => {
+    startEvents()
+    const off = subscribe((type) => {
+      if (type === 'refresh') {
+        void latest.current.refreshServers()
+        void latest.current.refreshMembers()
+      }
+    })
+    return () => {
+      off()
+      stopEvents()
+    }
+  }, [])
 
   useEffect(() => {
     void refreshMembers()
@@ -211,16 +230,7 @@ export default function Home() {
       <main className="chat">
         {error && <div className="banner">{error}</div>}
         {server && channel ? (
-          <>
-            <div className="chat-head"># {channel.name}</div>
-            <div className="chat-body">
-              <h2>Bienvenue dans #{channel.name} !</h2>
-              <p className="muted">
-                Les messages arrivent à la Phase 3. Pour l&apos;instant tu peux gérer ton serveur : inviter des amis,
-                créer des salons et donner des rôles.
-              </p>
-            </div>
-          </>
+          <ChatView key={channel.id} server={server} channel={channel} me={profile} members={members} />
         ) : (
           <div className="chat-body"><p className="muted">Choisis ou crée un serveur pour commencer.</p></div>
         )}
