@@ -1,0 +1,15 @@
+SERVEUR MonApp
+==============
+1) Installe Node.js (version LTS) : https://nodejs.org
+2) Double-clique sur  lancer-serveur.bat
+   -> une fenetre noire s'ouvre et affiche ton CODE D'INSCRIPTION.
+   -> laisse-la ouverte tant que tu veux que le serveur soit allume.
+3) Tes donnees sont dans le dossier "data" (a cote de ce fichier) :
+   - data.json        : comptes, serveurs, salons
+   - config.json      : ton code d'inscription (modifiable)
+   - sauvegardes/     : une copie automatique a chaque demarrage
+   Tu peux deplacer tout le dossier "serveur" sur ton disque F:.
+4) Dans l'appli, a l'ecran de connexion, mets l'adresse du serveur :
+   - sur ton PC :     http://localhost:3000
+   - meme reseau wifi : http://IP-DE-TON-PC:3000
+   - amis a distance : l'adresse donnee par ton tunnel (voir le guide)

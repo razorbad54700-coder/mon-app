@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../lib/auth'
-import { imageToAvatar } from '../lib/store'
+import { imageToAvatar } from '../lib/api'
 import Avatar from '../components/Avatar'
 import { FONTS, nameStyle } from '../lib/nameStyle'
 
@@ -9,33 +9,45 @@ export default function ProfilePage() {
   const { profile, update } = useAuth()
   const [username, setUsername] = useState(profile?.username ?? '')
   const [bio, setBio] = useState(profile?.bio ?? '')
-  const [avatarUrl, setAvatarUrl] = useState(profile?.avatar_url ?? null)
+  const [newAvatar, setNewAvatar] = useState<string | null>(null)
   const [color, setColor] = useState(profile?.name_color ?? '#ffffff')
   const [font, setFont] = useState(profile?.name_font ?? 'sans')
   const [effect, setEffect] = useState(profile?.name_effect ?? 'none')
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null)
+  const [busy, setBusy] = useState(false)
 
   if (!profile) return null
+  const preview = newAvatar ?? profile.avatar_url
 
   async function onAvatar(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     if (!file) return
     try {
-      setAvatarUrl(await imageToAvatar(file))
+      setNewAvatar(await imageToAvatar(file))
       setMsg({ ok: true, text: 'Avatar chargé : clique sur Enregistrer pour valider.' })
     } catch (err) {
-      setMsg({ ok: false, text: (err as Error).message })
+      setMsg({ ok: false, text: err instanceof Error ? err.message : 'Erreur' })
     }
   }
 
-  function onSave(e: React.FormEvent) {
+  async function onSave(e: React.FormEvent) {
     e.preventDefault()
+    setBusy(true)
     try {
-      update({ username, bio, avatar_url: avatarUrl, name_color: color, name_font: font, name_effect: effect })
+      await update({
+        username,
+        bio,
+        name_color: color,
+        name_font: font,
+        name_effect: effect,
+        ...(newAvatar ? { avatar: newAvatar } : {}),
+      })
+      setNewAvatar(null)
       setMsg({ ok: true, text: 'Profil enregistré ✅' })
     } catch (err) {
-      setMsg({ ok: false, text: (err as Error).message })
+      setMsg({ ok: false, text: err instanceof Error ? err.message : 'Erreur' })
     }
+    setBusy(false)
   }
 
   return (
@@ -45,7 +57,7 @@ export default function ProfilePage() {
 
         <div className="preview">
           <div className="row">
-            <Avatar url={avatarUrl} name={username || '?'} status={profile.status} size={80} />
+            <Avatar url={preview} name={username || '?'} status={profile.status} size={80} />
             <div style={{ fontSize: 22, ...nameStyle(color, font, effect) }}>{username || 'Pseudo'}</div>
           </div>
           {bio && <p style={{ whiteSpace: 'pre-wrap', marginBottom: 0 }}>{bio}</p>}
@@ -84,7 +96,7 @@ export default function ProfilePage() {
         {msg && <div className={msg.ok ? 'success' : 'error'}>{msg.text}</div>}
 
         <div className="row" style={{ marginTop: 18 }}>
-          <button style={{ flex: 1 }}>Enregistrer</button>
+          <button style={{ flex: 1 }} disabled={busy}>{busy ? '…' : 'Enregistrer'}</button>
           <Link to="/"><button type="button" className="ghost">Retour</button></Link>
         </div>
       </form>

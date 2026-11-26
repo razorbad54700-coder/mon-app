@@ -26,4 +26,7 @@ export const STATUSES = [
   { id: 'idle', label: 'Inactif', color: '#f0b232' },
   { id: 'dnd', label: 'Ne pas déranger', color: '#f23f43' },
   { id: 'invisible', label: 'Invisible', color: '#80848e' },
+  { id: 'offline', label: 'Hors ligne', color: '#80848e' },
 ] as const
+
+export const statusLabel = (id: string) => STATUSES.find((s) => s.id === id)?.label ?? ''

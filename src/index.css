@@ -51,20 +51,50 @@ a:hover { text-decoration: underline; }
 .avatar img, .avatar .ph { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; display: grid; place-items: center; background: var(--accent); font-weight: 800; }
 .avatar .dot { position: absolute; right: -1px; bottom: -1px; width: 28%; height: 28%; border-radius: 50%; border: 3px solid var(--panel); }
 
-/* Application */
-.app { height: 100%; display: grid; grid-template-columns: 280px 1fr; }
-.sidebar { background: var(--panel); border-right: 1px solid #ffffff10; display: flex; flex-direction: column; padding: 16px; gap: 14px; }
-.sidebar .brand { font-size: 20px; font-weight: 800; background: linear-gradient(90deg, var(--accent), var(--accent2)); -webkit-background-clip: text; background-clip: text; color: transparent; }
-.me { margin-top: auto; background: var(--panel2); border-radius: 12px; padding: 12px; }
-.main { padding: 32px; overflow: auto; }
-.pill { display: inline-block; padding: 4px 10px; border-radius: 999px; background: #ffffff14; font-size: 12px; margin: 4px 6px 0 0; }
-.preview { background: #0d0d1f; border-radius: 12px; padding: 16px; }
-.roadmap li { margin: 6px 0; }
+/* Application (Phase 2) */
+.app3 { height: 100%; display: grid; grid-template-columns: 72px 260px 1fr 250px; grid-template-areas: "rail chan chat members"; }
+.rail { grid-area: rail; background: #0a0a12; display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 12px 0; overflow-y: auto; }
+.rail-btn { width: 48px; height: 48px; padding: 0; border-radius: 24px; background: var(--panel2); font-size: 18px; transition: border-radius .2s, background .2s, transform .15s; }
+.rail-btn:hover:not(:disabled) { border-radius: 14px; background: var(--accent); transform: none; box-shadow: none; }
+.rail-btn.active { border-radius: 14px; background: linear-gradient(135deg, var(--accent), var(--accent2)); }
+.rail-btn.add { color: var(--ok); background: #ffffff10; font-size: 26px; }
+.chanpanel { grid-area: chan; background: var(--panel); display: flex; flex-direction: column; padding: 12px; gap: 8px; min-height: 0; overflow-y: auto; }
+.panel-head { padding: 6px 4px 10px; border-bottom: 1px solid #ffffff12; font-size: 16px; }
+.invite { background: var(--panel2); border-radius: 8px; padding: 8px 10px; }
+.invite code { flex: 1; letter-spacing: 2px; font-size: 15px; color: var(--accent2); }
+.section-title { display: flex; justify-content: space-between; align-items: center; font-size: 11px; font-weight: 800; color: var(--muted); margin-top: 8px; }
+.channels { display: flex; flex-direction: column; gap: 2px; }
+.channel { display: flex; align-items: center; border-radius: 6px; }
+.channel.active { background: #ffffff14; }
+.channel:hover { background: #ffffff0c; }
+.chan-name { flex: 1; text-align: left; background: none; padding: 7px 8px; font-weight: 600; color: var(--muted); }
+.channel.active .chan-name { color: var(--text); }
+.chan-name:hover:not(:disabled) { background: none; box-shadow: none; transform: none; filter: none; }
+button.small { padding: 4px 10px; font-size: 13px; border-radius: 6px; }
+button.danger { background: #f23f4333; color: #ff8a8d; }
+button.danger:hover:not(:disabled) { background: var(--danger); color: #fff; box-shadow: none; }
+.server-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
+.me { margin-top: auto; background: var(--panel2); border-radius: 12px; padding: 10px; }
+.empty { text-align: center; padding: 20px 6px; }
+.chat { grid-area: chat; display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--bg); }
+.chat-head { padding: 14px 18px; font-weight: 800; border-bottom: 1px solid #ffffff12; }
+.chat-body { padding: 28px; overflow-y: auto; }
+.banner { background: #f23f4333; color: #ff8a8d; padding: 8px 14px; font-size: 14px; }
+.members { grid-area: members; background: var(--panel); padding: 12px; overflow-y: auto; min-height: 0; }
+.member { width: 100%; display: flex; align-items: center; gap: 10px; background: none; padding: 5px 6px; text-align: left; border-radius: 8px; }
+.member:hover:not(:disabled) { background: #ffffff10; box-shadow: none; transform: none; filter: none; }
+.member.off { opacity: .45; }
+.member-card { background: var(--panel2); border-radius: 8px; padding: 10px; margin: 2px 0 8px; font-size: 14px; }
+.ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.overlay { position: fixed; inset: 0; background: #000a; display: grid; place-items: center; padding: 16px; z-index: 50; }
+.mobnav { display: none; grid-area: nav; }
 
-@media (max-width: 760px) {
-  .app { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
-  .sidebar { flex-direction: row; align-items: center; flex-wrap: wrap; }
-  .me { margin-top: 0; flex: 1; }
-  .main { padding: 18px; }
-  .grid3 { grid-template-columns: 1fr; }
+@media (max-width: 860px) {
+  .app3 { grid-template-columns: 1fr; grid-template-rows: auto 1fr auto; grid-template-areas: "rail" "view" "nav"; }
+  .rail { flex-direction: row; padding: 8px; overflow-x: auto; overflow-y: hidden; }
+  .chanpanel, .chat, .members { grid-area: view; display: none; }
+  .app3[data-view="channels"] .chanpanel { display: flex; }
+  .app3[data-view="main"] .chat { display: flex; }
+  .app3[data-view="members"] .members { display: block; }
+  .mobnav { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; padding: 8px; background: var(--panel); }
 }
