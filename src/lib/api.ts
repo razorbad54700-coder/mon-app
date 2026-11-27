@@ -1,29 +1,82 @@
 // Client pour parler au serveur MonApp.
 export type Status = 'online' | 'idle' | 'dnd' | 'invisible' | 'offline'
-export type Role = 'owner' | 'admin' | 'member'
 
+export type CustomStatus = { emoji: string; text: string }
 export type User = {
   id: string
   username: string
   bio: string
+  pronouns: string
+  custom_status: CustomStatus | null
+  banner_color: string
   avatar_url: string | null
   status: Status
   name_color: string
   name_font: string
   name_effect: string
 }
-export type Member = User & { role: Role }
-export type Channel = { id: string; name: string; type?: 'text' | 'voice' }
-export type VoiceParticipant = { userId: string; muted: boolean; deafened: boolean; camera: boolean }
+export type ProfileLink = { label: string; url: string }
+export type FullProfile = User & { location: string; links: ProfileLink[]; banner_url: string | null; created: number }
+
+export const PERM_LIST = [
+  { key: 'administrator', label: 'Administrateur', hint: 'Toutes les permissions, sans exception', group: 'Général' },
+  { key: 'manage_server', label: 'Gérer le serveur', hint: 'Nom, icône, description, communauté, code d\'invitation', group: 'Général' },
+  { key: 'manage_roles', label: 'Gérer les rôles', hint: 'Créer des rôles et les donner (seulement ceux sous le sien)', group: 'Général' },
+  { key: 'manage_channels', label: 'Gérer les salons', hint: 'Créer, modifier, supprimer des salons', group: 'Général' },
+  { key: 'manage_messages', label: 'Gérer les messages', hint: 'Supprimer les messages des autres, ignorer le mode lent', group: 'Modération' },
+  { key: 'manage_nicknames', label: 'Gérer les surnoms', hint: 'Changer le surnom des autres membres', group: 'Modération' },
+  { key: 'kick_members', label: 'Exclure des membres', hint: '', group: 'Modération' },
+  { key: 'ban_members', label: 'Bannir des membres', hint: '', group: 'Modération' },
+  { key: 'create_invite', label: 'Voir/créer des invitations', hint: '', group: 'Membres' },
+  { key: 'change_nickname', label: 'Changer son surnom', hint: '', group: 'Membres' },
+  { key: 'send_messages', label: 'Envoyer des messages', hint: '', group: 'Texte' },
+  { key: 'attach_files', label: 'Envoyer des images / clips', hint: '', group: 'Texte' },
+  { key: 'add_reactions', label: 'Ajouter des réactions', hint: '', group: 'Texte' },
+  { key: 'connect', label: 'Rejoindre les salons vocaux', hint: '', group: 'Vocal' },
+  { key: 'speak', label: 'Parler', hint: '', group: 'Vocal' },
+  { key: 'video', label: 'Activer la caméra', hint: '', group: 'Vocal' },
+  { key: 'screen_share', label: "Partager son écran", hint: '', group: 'Vocal' },
+  { key: 'use_soundboard', label: 'Utiliser le soundboard', hint: '', group: 'Vocal' },
+  { key: 'create_clips', label: 'Enregistrer des clips', hint: '', group: 'Vocal' },
+  { key: 'manage_soundboard', label: 'Gérer le soundboard', hint: 'Ajouter / supprimer des sons', group: 'Vocal' },
+] as const
+export type PermKey = (typeof PERM_LIST)[number]['key']
+export type Perms = Partial<Record<PermKey, boolean>>
+
+export type Role = { id: string; name: string; color: string; hoist: boolean; permissions: Perms; rank: number }
+export type Member = User & { roles: string[]; nick: string | null; joined: number; isOwner: boolean }
+export type Channel = { id: string; name: string; type: 'text' | 'voice'; topic: string; slowmode: number; readonly: boolean }
+export type Community = { enabled: boolean; rules: string; welcome: string; requireAccept: boolean; public: boolean }
+export type Sound = { id: string; name: string; emoji: string; url: string }
+export type VoiceParticipant = {
+  userId: string
+  muted: boolean
+  deafened: boolean
+  camera: boolean
+  screen: boolean
+  screenStreamId: string | null
+  recording: boolean
+}
 export type ServerInfo = {
   id: string
   name: string
-  role: Role
+  description: string
+  icon_url: string | null
+  isOwner: boolean
+  perms: Perms
   invite: string | null
   channels: Channel[]
+  roles: Role[]
+  everyone?: { permissions: Perms }
+  myRoles: string[]
+  nick: string | null
+  needsAccept: boolean
+  community: Community
   memberCount: number
   voice: Record<string, VoiceParticipant[]>
+  sounds: Sound[]
 }
+export type DiscoverEntry = { id: string; name: string; description: string; icon_url: string | null; memberCount: number; joined: boolean }
 
 const K_SERVER = 'monapp.server'
 const K_TOKEN = 'monapp.token'
@@ -63,6 +116,12 @@ export const setToken = (t: string | null) => write(K_TOKEN, t)
 
 export const absUrl = (u: string | null): string | null => (u ? base + u : null)
 const fixUser = <T extends { avatar_url: string | null }>(u: T): T => ({ ...u, avatar_url: absUrl(u.avatar_url) })
+const fixFull = (u: FullProfile): FullProfile => ({ ...fixUser(u), banner_url: absUrl(u.banner_url) })
+const fixServer = (s: ServerInfo): ServerInfo => ({
+  ...s,
+  icon_url: absUrl(s.icon_url),
+  sounds: s.sounds.map((x) => ({ ...x, url: base + x.url })),
+})
 
 export class NetworkError extends Error {}
 export class ApiError extends Error {
@@ -130,40 +189,100 @@ export async function signOut() {
   setToken(null)
 }
 
-export const getMe = async () => fixUser((await call<{ user: User }>('GET', '/me')).user)
-export const updateMe = async (patch: Partial<Omit<User, 'id' | 'avatar_url'>> & { avatar?: string | null }) =>
-  fixUser((await call<{ user: User }>('PATCH', '/me', patch)).user)
+export const getMe = async () => fixFull((await call<{ user: FullProfile }>('GET', '/me')).user)
+export type ProfilePatch = Partial<Omit<FullProfile, 'id' | 'avatar_url' | 'banner_url' | 'created'>> & {
+  avatar?: string | null
+  banner?: string | null
+}
+export const updateMe = async (patch: ProfilePatch) => fixFull((await call<{ user: FullProfile }>('PATCH', '/me', patch)).user)
+export async function getProfile(userId: string, serverId?: string) {
+  const r = await call<{ user: FullProfile; member?: Member }>('GET', `/users/${userId}/profile` + (serverId ? `?server=${serverId}` : ''))
+  return { user: fixFull(r.user), member: r.member ? fixUser(r.member) : undefined }
+}
 
-export const listServers = async () => (await call<{ servers: ServerInfo[] }>('GET', '/servers')).servers
-export const createServer = async (name: string) => (await call<{ server: ServerInfo }>('POST', '/servers', { name })).server
-export const joinServer = async (code: string) => (await call<{ server: ServerInfo }>('POST', '/servers/join', { code })).server
-export const renameServer = (id: string, name: string) => call('PATCH', `/servers/${id}`, { name })
-export const deleteServer = (id: string) => call('DELETE', `/servers/${id}`)
-export const leaveServer = (id: string) => call('POST', `/servers/${id}/leave`)
-export const resetInvite = (id: string) => call('POST', `/servers/${id}/invite/reset`)
-export const createChannel = (id: string, name: string, type: 'text' | 'voice' = 'text') =>
-  call('POST', `/servers/${id}/channels`, { name, type })
-export const deleteChannel = (id: string, channelId: string) => call('DELETE', `/servers/${id}/channels/${channelId}`)
-export const listMembers = async (id: string) =>
-  (await call<{ members: Member[] }>('GET', `/servers/${id}/members`)).members.map((m) => fixUser(m))
-export const setRole = (id: string, userId: string, role: 'admin' | 'member') =>
-  call('POST', `/servers/${id}/members/${userId}/role`, { role })
-export const kickMember = (id: string, userId: string) => call('DELETE', `/servers/${id}/members/${userId}`)
+const srv = async (p: Promise<{ server: ServerInfo }>) => fixServer((await p).server)
+const S = (id: string) => `/servers/${id}`
+export const listServers = async () => (await call<{ servers: ServerInfo[] }>('GET', '/servers')).servers.map(fixServer)
+export const createServer = (name: string) => srv(call('POST', '/servers', { name }))
+export const joinServer = (code: string) => srv(call('POST', '/servers/join', { code }))
+export const updateServer = (id: string, patch: {
+  name?: string; description?: string; icon?: string | null; community?: Partial<Community>; everyone?: { permissions: Perms }
+}) => srv(call('PATCH', S(id), patch))
+export const deleteServer = (id: string) => call('DELETE', S(id))
+export const leaveServer = (id: string) => call('POST', `${S(id)}/leave`)
+export const resetInvite = (id: string) => srv(call('POST', `${S(id)}/invite/reset`))
+export const transferServer = (id: string, userId: string) => call('POST', `${S(id)}/transfer`, { userId })
+export const acceptRules = (id: string) => srv(call('POST', `${S(id)}/accept-rules`))
+export const discover = async () =>
+  (await call<{ servers: DiscoverEntry[] }>('GET', '/discover')).servers.map((d) => ({ ...d, icon_url: absUrl(d.icon_url) }))
+export const joinPublic = (id: string) => srv(call('POST', `${S(id)}/join-public`))
+
+export const createChannel = (id: string, name: string, type: 'text' | 'voice' = 'text', topic = '') =>
+  srv(call('POST', `${S(id)}/channels`, { name, type, topic }))
+export const updateChannel = (id: string, cid: string, patch: Partial<Pick<Channel, 'name' | 'topic' | 'slowmode' | 'readonly'>>) =>
+  srv(call('PATCH', `${S(id)}/channels/${cid}`, patch))
+export const deleteChannel = (id: string, cid: string) => srv(call('DELETE', `${S(id)}/channels/${cid}`))
+
+export const createRole = (id: string, role: { name: string; color: string; hoist: boolean; permissions: Perms }) =>
+  srv(call('POST', `${S(id)}/roles`, role))
+export const updateRole = (id: string, rid: string, patch: Partial<Pick<Role, 'name' | 'color' | 'hoist' | 'permissions'>>) =>
+  srv(call('PATCH', `${S(id)}/roles/${rid}`, patch))
+export const deleteRole = (id: string, rid: string) => srv(call('DELETE', `${S(id)}/roles/${rid}`))
+export const moveRole = (id: string, rid: string, dir: 'up' | 'down') => srv(call('POST', `${S(id)}/roles/${rid}/move`, { dir }))
+
+export const listMembers = async (id: string) => (await call<{ members: Member[] }>('GET', `${S(id)}/members`)).members.map(fixUser)
+export const setMemberRoles = (id: string, userId: string, roles: string[]) => call('PUT', `${S(id)}/members/${userId}/roles`, { roles })
+export const setNick = (id: string, userId: string, nick: string | null) => call('PATCH', `${S(id)}/members/${userId}`, { nick })
+export const kickMember = (id: string, userId: string) => call('DELETE', `${S(id)}/members/${userId}`)
+export const banMember = (id: string, userId: string, reason = '') => call('POST', `${S(id)}/members/${userId}/ban`, { reason })
+export const listBans = async (id: string) =>
+  (await call<{ bans: { userId: string; username: string; reason: string; at: number }[] }>('GET', `${S(id)}/bans`)).bans
+export const unban = (id: string, userId: string) => call('DELETE', `${S(id)}/bans/${userId}`)
+
+export const addSound = (id: string, name: string, emoji: string, data: string) => srv(call('POST', `${S(id)}/sounds`, { name, emoji, data }))
+export const deleteSound = (id: string, sid: string) => srv(call('DELETE', `${S(id)}/sounds/${sid}`))
+export const playSound = (soundId: string) => call('POST', '/voice/sound', { soundId })
+
+export const displayName = (m: { username: string; nick?: string | null }) => m.nick || m.username
+
+// Lit un fichier en data-URL
+export const fileToDataUrl = (file: Blob) =>
+  new Promise<string>((resolve, reject) => {
+    const r = new FileReader()
+    r.onload = () => resolve(String(r.result))
+    r.onerror = () => reject(new Error('Fichier illisible.'))
+    r.readAsDataURL(file)
+  })
+
+// Envoie un clip vidéo (WebM) dans un salon texte
+export async function uploadClip(channelId: string, blob: Blob, caption: string) {
+  let res: Response
+  try {
+    res = await fetch(`${base}/api/channels/${channelId}/clips?caption=${encodeURIComponent(caption)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'video/webm', Authorization: 'Bearer ' + getToken() },
+      body: blob,
+    })
+  } catch {
+    throw new NetworkError("Impossible d'envoyer le clip : serveur injoignable.")
+  }
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) throw new ApiError(res.status, data.error ?? 'Erreur ' + res.status)
+}
 
 // Réduit une image à 128 px pour l'avatar
-export function imageToAvatar(file: File): Promise<string> {
+export function imageToAvatar(file: File, size = 128, jpeg = false): Promise<string> {
   return new Promise((resolve, reject) => {
     const img = new Image()
     const url = URL.createObjectURL(file)
     img.onload = () => {
-      const size = 128
       const scale = Math.min(1, size / Math.max(img.width, img.height))
       const canvas = document.createElement('canvas')
       canvas.width = Math.max(1, Math.round(img.width * scale))
       canvas.height = Math.max(1, Math.round(img.height * scale))
       canvas.getContext('2d')!.drawImage(img, 0, 0, canvas.width, canvas.height)
       URL.revokeObjectURL(url)
-      resolve(canvas.toDataURL('image/png'))
+      resolve(jpeg ? canvas.toDataURL('image/jpeg', 0.8) : canvas.toDataURL('image/png'))
     }
     img.onerror = () => {
       URL.revokeObjectURL(url)
@@ -174,19 +293,20 @@ export function imageToAvatar(file: File): Promise<string> {
 }
 
 // ---------- Messages ----------
-export type Author = Pick<User, 'id' | 'username' | 'avatar_url' | 'name_color' | 'name_font' | 'name_effect'>
+export type Author = Pick<User, 'id' | 'username' | 'avatar_url' | 'name_color' | 'name_font' | 'name_effect'> & { nick: string | null; role_color: string | null }
 export type Message = {
   id: string
   channelId: string
   author: Author
   content: string
   image_url: string | null
+  clip_url: string | null
   created: number
   reactions: Record<string, string[]>
 }
 export const REACTION_EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '🔥', '🎉', '👀']
 
-export const fixMessage = (m: Message): Message => ({ ...m, author: fixUser(m.author), image_url: absUrl(m.image_url) })
+export const fixMessage = (m: Message): Message => ({ ...m, author: fixUser(m.author), image_url: absUrl(m.image_url), clip_url: absUrl(m.clip_url) })
 
 export async function listMessages(channelId: string, before?: string) {
   const r = await call<{ messages: Message[]; hasMore: boolean }>(
@@ -241,6 +361,5 @@ export const getIce = async () => (await call<{ iceServers: RTCIceServer[] }>('G
 export const joinVoiceChannel = async (channelId: string) =>
   (await call<{ participants: VoiceParticipant[] }>('POST', `/voice/${channelId}/join`)).participants
 export const leaveVoiceChannel = () => call('POST', '/voice/leave')
-export const setVoiceState = (state: { muted: boolean; deafened: boolean; camera: boolean }) =>
-  call('POST', '/voice/state', state)
+export const setVoiceState = (state: Partial<Omit<VoiceParticipant, 'userId'>>) => call('POST', '/voice/state', state)
 export const sendSignal = (to: string, data: unknown) => call('POST', '/voice/signal', { to, data })

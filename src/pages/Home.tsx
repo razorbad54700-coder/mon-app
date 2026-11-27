@@ -6,14 +6,15 @@ import Avatar from '../components/Avatar'
 import ServerModal from '../components/ServerModal'
 import ChatView from '../components/ChatView'
 import VoiceRoom from '../components/VoiceRoom'
+import ServerSettings from '../components/ServerSettings'
+import MemberCard from '../components/MemberCard'
+import { playMessageSound } from '../lib/sounds'
 import { subscribe } from '../lib/events'
 import { leaveVoice, toggleDeafen, toggleMute, useVoice } from '../lib/voice'
 import { STATUSES, nameStyle, statusLabel } from '../lib/nameStyle'
 
 type View = 'channels' | 'main' | 'members'
 const errMsg = (e: unknown) => (e instanceof Error ? e.message : 'Erreur')
-const ROLE_ORDER: api.Role[] = ['owner', 'admin', 'member']
-const ROLE_LABEL: Record<api.Role, string> = { owner: 'Propriétaire', admin: 'Admins', member: 'Membres' }
 
 export default function Home() {
   const { profile, update, logout } = useAuth()
@@ -27,15 +28,18 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null)
   const [newChannel, setNewChannel] = useState<string | null>(null)
   const [newChannelType, setNewChannelType] = useState<'text' | 'voice'>('text')
-  const [renaming, setRenaming] = useState<string | null>(null)
+  const [settings, setSettings] = useState(false)
+  const [unread, setUnread] = useState<Record<string, number>>({})
   const [openMember, setOpenMember] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
 
   const server = servers.find((s) => s.id === selId) ?? servers[0] ?? null
   const channel = server?.channels.find((c) => c.id === chanId) ?? server?.channels[0] ?? null
   const serverId = server?.id ?? null
-  const isStaff = server?.role === 'owner' || server?.role === 'admin'
-  const isOwner = server?.role === 'owner'
+  const perms = server?.perms ?? {}
+  const canSettings = Boolean(perms.manage_server || perms.manage_roles || perms.manage_channels || perms.manage_soundboard || perms.ban_members)
+  const open = useRef({ channel: channel?.id, status: profile?.status, me: profile?.id })
+  open.current = { channel: channel?.id, status: profile?.status, me: profile?.id }
 
   const refreshServers = useCallback(async () => {
     try {
@@ -65,12 +69,19 @@ export default function Home() {
   const latest = useRef({ refreshServers, refreshMembers })
   latest.current = { refreshServers, refreshMembers }
   useEffect(() => {
-    return subscribe((type) => {
+    return subscribe((type, data) => {
       if (type === 'refresh') {
         void latest.current.refreshServers()
         void latest.current.refreshMembers()
       } else if (type === 'voice') {
         void latest.current.refreshServers()
+      } else if (type === 'message') {
+        const cur = open.current
+        if (data.author?.id === cur.me) return
+        if (data.channelId !== cur.channel || document.hidden) {
+          setUnread((u) => ({ ...u, [data.channelId]: (u[data.channelId] ?? 0) + 1 }))
+          if (cur.status !== 'dnd') playMessageSound()
+        }
       }
     })
   }, [])
@@ -102,12 +113,22 @@ export default function Home() {
     })
   }
 
-  const grouped = ROLE_ORDER.map((role) => ({
-    role,
-    list: members
-      .filter((m) => m.role === role)
-      .sort((a, b) => Number(a.status === 'offline') - Number(b.status === 'offline') || a.username.localeCompare(b.username)),
-  })).filter((g) => g.list.length > 0)
+  // Groupes : un par rôle « affiché à part » (du plus haut au plus bas), puis les autres, selon leur rôle le plus haut
+  const hoisted = (server?.roles ?? []).filter((r) => r.hoist).sort((a, b) => b.rank - a.rank)
+  const roleById = (id: string) => server?.roles.find((r) => r.id === id)
+  const groupOf = (m: api.Member) => {
+    const top = m.roles.map(roleById).filter((r): r is api.Role => Boolean(r?.hoist)).sort((a, b) => b.rank - a.rank)[0]
+    return top ? top.id : m.isOwner ? 'owner' : 'members'
+  }
+  const sortM = (a: api.Member, b: api.Member) =>
+    Number(a.status === 'offline') - Number(b.status === 'offline') || api.displayName(a).localeCompare(api.displayName(b))
+  const grouped = [
+    { id: 'owner', label: '👑 Propriétaire', list: members.filter((m) => m.isOwner && groupOf(m) === 'owner').sort(sortM) },
+    ...hoisted.map((r) => ({ id: r.id, label: r.name, list: members.filter((m) => groupOf(m) === r.id).sort(sortM) })),
+    { id: 'members', label: 'Membres', list: members.filter((m) => groupOf(m) === 'members').sort(sortM) },
+  ].filter((g) => g.list.length > 0)
+  const opened = members.find((m) => m.id === openMember)
+  const totalUnread = Object.values(unread).reduce((a, b) => a + b, 0)
 
   return (
     <div className="app3" data-view={view}>
@@ -120,7 +141,7 @@ export default function Home() {
             title={s.name}
             onClick={() => { setSelId(s.id); setChanId(null); setView('channels'); setOpenMember(null) }}
           >
-            {s.name.charAt(0).toUpperCase()}
+            {s.icon_url ? <img src={s.icon_url} alt={s.name} className="rail-icon" /> : [...s.name][0]?.toUpperCase()}
           </button>
         ))}
         <button className="rail-btn add" title="Créer ou rejoindre un serveur" onClick={() => setModal(true)}>+</button>
@@ -130,23 +151,11 @@ export default function Home() {
       <aside className="chanpanel">
         {server ? (
           <>
-            <div className="panel-head">
-              {renaming !== null ? (
-                <form
-                  className="row"
-                  onSubmit={(e) => {
-                    e.preventDefault()
-                    void act(() => api.renameServer(server.id, renaming))
-                    setRenaming(null)
-                  }}
-                >
-                  <input value={renaming} onChange={(e) => setRenaming(e.target.value)} maxLength={40} autoFocus />
-                  <button className="small">OK</button>
-                </form>
-              ) : (
-                <strong className="ellipsis">{server.name}</strong>
-              )}
+            <div className="panel-head row" style={{ justifyContent: 'space-between' }}>
+              <strong className="ellipsis">{server.name}</strong>
+              {canSettings && <button className="small ghost" title="Paramètres du serveur" onClick={() => setSettings(true)}>⚙</button>}
             </div>
+            {server.description && <div className="muted">{server.description}</div>}
 
             {server.invite && (
               <div className="invite">
@@ -161,7 +170,7 @@ export default function Home() {
 
             <div className="section-title">
               <span>SALONS</span>
-              {isStaff && <button className="small ghost" onClick={() => setNewChannel('')}>+</button>}
+              {perms.manage_channels && <button className="small ghost" onClick={() => setNewChannel('')}>+</button>}
             </div>
             {newChannel !== null && (
               <form
@@ -184,16 +193,10 @@ export default function Home() {
               {server.channels.map((c) => (
                 <div key={c.id}>
                   <div className={'channel' + (c.id === channel?.id ? ' active' : '')}>
-                    <button className="chan-name" onClick={() => { setChanId(c.id); setView('main') }}>
-                      {c.type === 'voice' ? '🔊' : '#'} {c.name}
+                    <button className="chan-name" onClick={() => { setChanId(c.id); setView('main'); setUnread((u) => ({ ...u, [c.id]: 0 })) }}>
+                      {c.type === 'voice' ? '🔊' : c.readonly ? '📢' : '#'} {c.name}
+                      {unread[c.id] > 0 && c.id !== channel?.id && <span className="badge">{unread[c.id]}</span>}
                     </button>
-                    {isStaff && server.channels.length > 1 && (
-                      <button
-                        className="small ghost"
-                        title="Supprimer le salon"
-                        onClick={() => { if (confirm(`Supprimer le salon ${c.name} ?`)) void act(() => api.deleteChannel(server.id, c.id)) }}
-                      >✕</button>
-                    )}
                   </div>
                   {c.type === 'voice' &&
                     (server.voice?.[c.id] ?? []).map((p) => {
@@ -201,9 +204,9 @@ export default function Home() {
                       return (
                         <div key={p.userId} className={'voice-user' + (v.speaking.includes(p.userId) ? ' speaking' : '')}>
                           <Avatar url={m?.avatar_url ?? null} name={m?.username ?? '?'} size={22} />
-                          <span className="ellipsis">{m?.username ?? '…'}</span>
+                          <span className="ellipsis">{m ? api.displayName(m) : '…'}</span>
                           {p.deafened ? ' 🎧✕' : p.muted ? ' 🔇' : ''}
-                          {p.camera ? ' 📷' : ''}
+                          {p.camera ? ' 📷' : ''}{p.screen ? ' 🖥' : ''}{p.recording ? ' 🔴' : ''}
                         </div>
                       )
                     })}
@@ -211,14 +214,11 @@ export default function Home() {
               ))}
             </div>
 
-            <div className="server-actions">
-              {isOwner && <button className="small ghost" onClick={() => setRenaming(server.name)}>Renommer</button>}
-              {isOwner ? (
-                <button className="small danger" onClick={() => { if (confirm(`Supprimer définitivement « ${server.name} » ?`)) void act(() => api.deleteServer(server.id)) }}>Supprimer le serveur</button>
-              ) : (
-                <button className="small danger" onClick={() => { if (confirm(`Quitter « ${server.name} » ?`)) void act(() => api.leaveServer(server.id)) }}>Quitter</button>
-              )}
-            </div>
+            {!server.isOwner && (
+              <div className="server-actions">
+                <button className="small danger" onClick={() => { if (confirm(`Quitter « ${server.name} » ?`)) void act(() => api.leaveServer(server.id)) }}>Quitter le serveur</button>
+              </div>
+            )}
           </>
         ) : (
           <div className="empty">
@@ -248,14 +248,14 @@ export default function Home() {
             <Avatar url={profile.avatar_url} name={profile.username} status={profile.status} size={40} />
             <div style={{ minWidth: 0 }}>
               <div className="ellipsis" style={nameStyle(profile.name_color, profile.name_font, profile.name_effect)}>{profile.username}</div>
-              <div className="muted">{statusLabel(profile.status)}</div>
+              <div className="muted ellipsis">{profile.custom_status ? `${profile.custom_status.emoji} ${profile.custom_status.text}` : statusLabel(profile.status)}</div>
             </div>
           </div>
           <select style={{ marginTop: 8 }} value={profile.status} onChange={(e) => void update({ status: e.target.value as api.Status })}>
             {STATUSES.filter((s) => s.id !== 'offline').map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
           </select>
           <div className="row" style={{ marginTop: 8 }}>
-            <Link to="/profile"><button className="small ghost">Mon profil</button></Link>
+            <Link to="/profile"><button className="small ghost">Réglages</button></Link>
             <button className="small ghost" onClick={() => void logout()}>Déconnexion</button>
           </div>
         </div>
@@ -268,7 +268,7 @@ export default function Home() {
           channel.type === 'voice' ? (
             <VoiceRoom key={channel.id} server={server} channel={channel} me={profile} members={members} />
           ) : (
-            <ChatView key={channel.id} server={server} channel={channel} me={profile} members={members} />
+            <ChatView key={channel.id} server={server} channel={channel} me={profile} members={members} onChanged={() => void refreshServers()} />
           )
         ) : (
           <div className="chat-body"><p className="muted">Choisis ou crée un serveur pour commencer.</p></div>
@@ -279,37 +279,19 @@ export default function Home() {
       <aside className="members">
         {server &&
           grouped.map((g) => (
-            <div key={g.role}>
-              <div className="section-title"><span>{ROLE_LABEL[g.role].toUpperCase()} — {g.list.length}</span></div>
+            <div key={g.id}>
+              <div className="section-title"><span>{g.label.toUpperCase()} — {g.list.length}</span></div>
               {g.list.map((m) => {
-                const mine = m.id === profile.id
-                const canRole = isOwner && !mine && m.role !== 'owner'
-                const canKick = !mine && m.role !== 'owner' && (isOwner || (server.role === 'admin' && m.role === 'member'))
+                const rc = m.roles.map(roleById).filter((r): r is api.Role => Boolean(r?.color)).sort((x, y) => y.rank - x.rank)[0]?.color
+                const css = nameStyle(rc && m.name_color === '#ffffff' && m.name_effect === 'none' ? rc : m.name_color, m.name_font, m.name_effect)
                 return (
-                  <div key={m.id}>
-                    <button className={'member' + (m.status === 'offline' ? ' off' : '')} onClick={() => setOpenMember(openMember === m.id ? null : m.id)}>
-                      <Avatar url={m.avatar_url} name={m.username} status={m.status} size={34} />
-                      <span className="ellipsis" style={nameStyle(m.name_color, m.name_font, m.name_effect)}>{m.username}</span>
-                    </button>
-                    {openMember === m.id && (
-                      <div className="member-card">
-                        <div className="muted">{statusLabel(m.status)}</div>
-                        {m.bio && <p style={{ whiteSpace: 'pre-wrap' }}>{m.bio}</p>}
-                        <div className="row" style={{ flexWrap: 'wrap' }}>
-                          {canRole && (
-                            <button className="small ghost" onClick={() => void act(() => api.setRole(server.id, m.id, m.role === 'admin' ? 'member' : 'admin'))}>
-                              {m.role === 'admin' ? 'Retirer admin' : 'Nommer admin'}
-                            </button>
-                          )}
-                          {canKick && (
-                            <button className="small danger" onClick={() => { if (confirm(`Exclure ${m.username} ?`)) void act(() => api.kickMember(server.id, m.id)) }}>
-                              Exclure
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    )}
-                  </div>
+                  <button key={m.id} className={'member' + (m.status === 'offline' ? ' off' : '')} onClick={() => setOpenMember(m.id)}>
+                    <Avatar url={m.avatar_url} name={m.username} status={m.status} size={34} />
+                    <span style={{ minWidth: 0 }}>
+                      <span className="ellipsis" style={{ display: 'block', ...css }}>{api.displayName(m)}</span>
+                      {m.custom_status && <span className="muted ellipsis" style={{ display: 'block', fontSize: 12 }}>{m.custom_status.emoji} {m.custom_status.text}</span>}
+                    </span>
+                  </button>
                 )
               })}
             </div>
@@ -318,10 +300,21 @@ export default function Home() {
 
       <div className="mobnav">
         <button className={view === 'channels' ? '' : 'ghost'} onClick={() => setView('channels')}>Salons</button>
-        <button className={view === 'main' ? '' : 'ghost'} onClick={() => setView('main')}>Chat</button>
+        <button className={view === 'main' ? '' : 'ghost'} onClick={() => setView('main')}>Chat{totalUnread > 0 && <span className="badge">{totalUnread}</span>}</button>
         <button className={view === 'members' ? '' : 'ghost'} onClick={() => setView('members')}>Membres</button>
       </div>
 
+      {server && opened && (
+        <MemberCard server={server} member={opened} meId={profile.id} onClose={() => setOpenMember(null)} onChanged={async () => { await refreshServers(); await refreshMembers() }} />
+      )}
+      {server && settings && (
+        <ServerSettings
+          server={server} members={members} meId={profile.id}
+          onClose={() => setSettings(false)}
+          onRefresh={async () => { await refreshServers(); await refreshMembers() }}
+          onDeleted={() => { setSettings(false); void refreshServers() }}
+        />
+      )}
       {modal && (
         <ServerModal
           onClose={() => setModal(false)}

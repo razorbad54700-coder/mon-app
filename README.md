@@ -1,20 +1,23 @@
-# MonApp — Phase 4 (vocal)
+# MonApp — Phase 5
 
 - **Appli** (React + Vite) : `.exe` Windows (Electron) et `.apk` Android (Capacitor), compilés par GitHub Actions.
 - **Serveur** (dossier `serveur/`) : Node.js sans dépendances, à lancer sur ton PC (comme un serveur Minecraft).
 
-## Ce qui marche
-Comptes en ligne (pseudo + mot de passe, code d'inscription), profil, statuts, serveurs, salons, codes d'invitation, rôles (propriétaire / admin / membre), exclusion de membres, liste des membres en ligne.
-Messages en temps réel, images, réactions emoji, suppression de messages (les siens, ou ceux des autres pour les admins).
+## Nouveautés Phase 5
+- **Rôles** illimités (50) avec couleur, hiérarchie (↑/↓) et 20 permissions ; permissions de base « @everyone » ; propriétaire / administrateur.
+- **Paramètres du serveur** (⚙) : nom, icône, description, code d'invitation, transfert de propriété, salons (sujet, mode lent, lecture seule), bannis, soundboard.
+- **Mode Communauté** : règlement à accepter, message d'accueil, serveur public visible dans « Découvrir ».
+- **Pseudos libres** : n'importe quels caractères (emojis, accents, symboles…), sauf invisibles/de contrôle. Surnoms par serveur.
+- **Profil** : bannière, pronoms, lieu, statut personnalisé, 5 liens + réglages d'apparence, audio/vidéo, qualité du partage d'écran.
+- **Vocal** : partage d'écran (jusqu'à 1080p120, ordinateur), soundboard, clips (60 s max, envoyés dans un salon texte).
 
 ## Lancer le serveur
-Voir `serveur/LISEZMOI.txt` : installe Node.js (LTS), puis double-clique sur `serveur/lancer-serveur.bat`.
+Voir `serveur/LISEZMOI.txt`. Mise à jour : remplace seulement les fichiers, **jamais** le dossier `serveur/data`.
 
 ## Compiler l'appli
 Onglet **Actions** de GitHub → **Build Windows (.exe)** / **Build Android (.apk)** → **Run workflow**.
 
-## Vocal (Phase 4)
-Salons vocaux (🔊) : micro, sourdine, caméra, indicateur « qui parle », jusqu'à 8 personnes par salon.
-La voix passe directement entre les joueurs (WebRTC), le serveur ne fait que les mettre en relation.
-Si certains amis n'arrivent pas à s'entendre (réseau très restrictif), ajoute un serveur TURN dans `serveur/data/config.json` :
-`"turn": { "urls": "turn:mon-serveur:3478", "username": "...", "credential": "..." }`
+## Limites connues
+- 120 images/s dépend du PC et du débit montant (chaque spectateur reçoit son flux).
+- Partage d'écran impossible depuis le téléphone (on peut regarder). Les clips sont manuels (démarrer/arrêter).
+- Réseau très restrictif : ajoute un serveur TURN dans `serveur/data/config.json` : `"turn": { "urls": "turn:...", "username": "...", "credential": "..." }`
