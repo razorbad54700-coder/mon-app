@@ -7,8 +7,10 @@ import { FONTS, nameStyle } from '../lib/nameStyle'
 import { SCREEN_PRESETS, setPrefs, usePrefs } from '../lib/prefs'
 import { applyVolume } from '../lib/voice'
 import { playMessageSound } from '../lib/sounds'
+import GamesTab from '../components/GamesTab'
+import AccountTab from '../components/AccountTab'
 
-type Tab = 'profile' | 'look' | 'av' | 'screen'
+type Tab = 'profile' | 'games' | 'account' | 'look' | 'av' | 'screen'
 const ACCENTS = ['#7c5cff', '#00b8d9', '#23a55a', '#f0b232', '#f23f43', '#ff4ecd', '#ff7a45']
 
 export default function ProfilePage() {
@@ -76,7 +78,7 @@ export default function ProfilePage() {
       <div className="card wide">
         <h1>Réglages</h1>
         <div className="tabs">
-          {([['profile', 'Profil'], ['look', 'Apparence'], ['av', 'Audio / Vidéo'], ['screen', 'Partage d’écran']] as [Tab, string][]).map(([id, l]) => (
+          {([['profile', 'Profil'], ['games', '🎮 Jeux'], ['account', 'Compte'], ['look', 'Apparence'], ['av', 'Audio / Vidéo'], ['screen', 'Partage d’écran']] as [Tab, string][]).map(([id, l]) => (
             <button key={id} className={tab === id ? '' : 'ghost'} onClick={() => { setTab(id); setMsg(null) }}>{l}</button>
           ))}
         </div>
@@ -154,6 +156,9 @@ export default function ProfilePage() {
             </div>
           </form>
         )}
+
+        {tab === 'games' && <GamesTab />}
+        {tab === 'account' && <AccountTab />}
 
         {tab === 'look' && (
           <div>

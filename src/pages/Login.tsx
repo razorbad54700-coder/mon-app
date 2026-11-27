@@ -1,10 +1,11 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../lib/auth'
-import { getServerAddress, setServerAddress } from '../lib/api'
+import { getServerAddress, googleFlow, ping, setServerAddress } from '../lib/api'
 
 export default function Login() {
-  const { login } = useAuth()
+  const { login, retry } = useAuth()
+  const [googleMsg, setGoogleMsg] = useState<string | null>(null)
   const [address, setAddress] = useState(getServerAddress())
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
@@ -24,6 +25,22 @@ export default function Login() {
     }
   }
 
+  async function onGoogle() {
+    setError(null)
+    setLoading(true)
+    try {
+      setServerAddress(address)
+      const info = await ping(address)
+      if (!info.google) throw new Error("La connexion Google n'est pas activée sur ce serveur.")
+      await googleFlow({ onWait: () => setGoogleMsg('Une page Google s\'est ouverte dans ton navigateur : connecte-toi, puis reviens ici…') })
+      retry()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Erreur')
+    }
+    setGoogleMsg(null)
+    setLoading(false)
+  }
+
   return (
     <div className="center">
       <form className="card" onSubmit={onSubmit}>
@@ -36,6 +53,8 @@ export default function Login() {
         <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required autoComplete="current-password" />
         {error && <div className="error">{error}</div>}
         <button className="full" disabled={loading}>{loading ? '…' : 'Connexion'}</button>
+        <button type="button" className="full ghost" disabled={loading || !address} onClick={() => void onGoogle()}>🔵 Continuer avec Google</button>
+        {googleMsg && <div className="muted" style={{ marginTop: 8 }}>{googleMsg}</div>}
         <div className="links">
           <span className="muted">Pas de compte ?</span>
           <Link to="/signup">Créer un compte</Link>

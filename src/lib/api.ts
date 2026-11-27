@@ -168,7 +168,7 @@ async function call<T>(method: string, path: string, body?: unknown, auth = true
   return data as T
 }
 
-export async function ping(address: string): Promise<{ signupCode: boolean }> {
+export async function ping(address: string): Promise<{ signupCode: boolean; google?: boolean }> {
   const target = normalizeAddress(address)
   let res: Response
   try {
@@ -395,3 +395,32 @@ export const claimQuest = (id: string) => call<{ reward: number; economy: Econom
 export const buyItem = async (itemId: string) => (await call<{ economy: Economy }>('POST', '/shop/buy', { itemId })).economy
 export const equipItem = async (slot: ShopItem['slot'], itemId: string | null) =>
   (await call<{ economy: Economy }>('POST', '/shop/equip', { slot, itemId })).economy
+
+// ---------- Jeux ----------
+export type GameStatus = 'playing' | 'completed' | 'backlog' | 'wishlist'
+export type Game = { name: string; status: GameStatus; platform: string; hours: number; rating: number; favorite: boolean; emoji: string; note: string }
+export const GAME_STATUS_LABEL: Record<GameStatus, string> = { playing: '▶ En cours', completed: '✅ Terminé', backlog: '📚 À faire', wishlist: '🎁 Souhaité' }
+export const PLATFORMS = ['PC', 'PlayStation', 'Xbox', 'Switch', 'Mobile', 'Autre']
+export const getMyGames = () => call<{ games: Game[]; public: boolean }>('GET', '/me/games')
+export const saveMyGames = (games: Game[], isPublic: boolean) => call<{ games: Game[]; public: boolean }>('PUT', '/me/games', { games, public: isPublic })
+export const getUserGames = (id: string) => call<{ games: Game[]; hidden?: boolean }>('GET', `/users/${id}/games`)
+
+// ---------- Google ----------
+export const googleStatus = () => call<{ linked: boolean; email: string | null; googleOnly: boolean }>('GET', '/me/google')
+export const googleUnlink = () => call('DELETE', '/me/google')
+// Ouvre la page Google du serveur dans le navigateur, puis attend le résultat
+export async function googleFlow(opts: { link?: boolean; onWait?: () => void } = {}): Promise<{ token?: string; linked?: boolean }> {
+  const { state } = await call<{ state: string }>('POST', '/google/start', undefined, Boolean(opts.link))
+  window.open(`${base}/google?state=${state}`, '_blank')
+  opts.onWait?.()
+  const end = Date.now() + 5 * 60 * 1000
+  while (Date.now() < end) {
+    await new Promise((r) => setTimeout(r, 2000))
+    const r = await call<{ pending?: boolean; token?: string; linked?: boolean }>('GET', `/google/poll?state=${state}`, undefined, false)
+    if (!r.pending) {
+      if (r.token) setToken(r.token)
+      return r
+    }
+  }
+  throw new Error('Temps écoulé : recommence la connexion Google.')
+}

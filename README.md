@@ -1,7 +1,11 @@
-# MonApp — Phase 6
+# MonApp — Phase 7
 
 - **Appli** (React + Vite) : `.exe` Windows (Electron) et `.apk` Android (Capacitor), compilés par GitHub Actions.
 - **Serveur** (dossier `serveur/`) : Node.js sans dépendances, à lancer sur ton PC (comme un serveur Minecraft).
+
+## Nouveautés Phase 7
+- **Collection de jeux** sur ton profil (statut, plateforme, heures, note, favoris, visible ou privée) + badge Gamer.
+- **Connexion avec Google** (facultative) : voir `serveur/LISEZMOI.txt`. Marche seulement via localhost ou une adresse https.
 
 ## Nouveautés Phase 6
 - **Pièces 🪙** : récompense quotidienne (50, jusqu'à 100 avec une série), quêtes du jour (3 par jour), bonus de badges.

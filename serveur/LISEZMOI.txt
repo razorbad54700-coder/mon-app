@@ -21,3 +21,16 @@ VOCAL
 La voix passe directement entre les joueurs. Si certains amis ne s'entendent pas (reseau tres restrictif),
 il faut un serveur TURN : ajoute dans data/config.json la ligne
   "turn": { "urls": "turn:adresse:3478", "username": "...", "credential": "..." }
+
+
+=== CONNEXION AVEC GOOGLE (facultatif) ===
+Sans cette étape, le bouton « Continuer avec Google » dit simplement que ce n'est pas activé.
+1. Va sur https://console.cloud.google.com et crée un projet (gratuit).
+2. Menu « API et services » > « Écran de consentement OAuth » : type « Externe », donne un nom à l'appli,
+   mets ton e-mail. Ajoute ton adresse Gmail (et celles de tes amis) comme « utilisateurs test ».
+3. « Identifiants » > « Créer des identifiants » > « ID client OAuth » > type « Application Web ».
+   Dans « Origines JavaScript autorisées », ajoute l'adresse de ton serveur, par exemple http://localhost:3000
+   (Google n'accepte que localhost ou une adresse en https : pour tes amis il faudra le tunnel de la phase 10).
+4. Copie l'ID client (qui finit par .apps.googleusercontent.com) et ajoute-le dans serveur/data/config.json :
+     "googleClientId": "TON-ID.apps.googleusercontent.com"
+   (sans oublier la virgule avec la ligne du dessus). Relance le serveur.

@@ -16,6 +16,7 @@ export default function MemberCard({
   onClose: () => void
 }) {
   const [prof, setProf] = useState<api.FullProfile | null>(null)
+  const [games, setGames] = useState<api.Game[]>([])
   const [err, setErr] = useState<string | null>(null)
   const [nick, setNick] = useState(member.nick ?? '')
   const p = server.perms
@@ -26,6 +27,7 @@ export default function MemberCard({
 
   useEffect(() => {
     api.getProfile(member.id, server.id).then((r) => setProf(r.user)).catch(() => {})
+    api.getUserGames(member.id).then((r) => setGames(r.games)).catch(() => {})
   }, [member.id, server.id])
 
   async function run(fn: () => Promise<unknown>) {
@@ -57,6 +59,18 @@ export default function MemberCard({
         {u.bio && <p style={{ whiteSpace: 'pre-wrap' }}>{u.bio}</p>}
         {prof?.location && <div className="muted">📍 {prof.location}</div>}
         {prof?.links.map((l) => <div key={l.url}><a href={l.url} target="_blank" rel="noreferrer">🔗 {l.label}</a></div>)}
+        {games.length > 0 && (
+          <div style={{ margin: '10px 0' }}>
+            <div className="section-title"><span>JEUX</span></div>
+            {[...games].sort((a, b) => Number(b.favorite) - Number(a.favorite) || Number(b.status === 'playing') - Number(a.status === 'playing')).slice(0, 6).map((g) => (
+              <div key={g.name} className="row" style={{ fontSize: 14, margin: '3px 0' }}>
+                <span>{g.emoji}</span><span className="ellipsis grow">{g.favorite && '⭐ '}{g.name}</span>
+                <span className="muted">{g.status === 'playing' ? 'joue en ce moment' : api.GAME_STATUS_LABEL[g.status]}</span>
+              </div>
+            ))}
+            {games.length > 6 && <div className="muted">+ {games.length - 6} autres</div>}
+          </div>
+        )}
         <div className="chips" style={{ margin: '10px 0' }}>
           {member.roles.map((id) => server.roles.find((r) => r.id === id)).filter(Boolean).map((r) => (
             <span key={r!.id} className="chip"><span className="dot" style={{ background: r!.color || '#999' }} /> {r!.name}</span>

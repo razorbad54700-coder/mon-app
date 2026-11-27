@@ -1,4 +1,4 @@
-// MonApp — serveur (Phase 6). Aucune dépendance : seulement Node.js 18+.
+// MonApp — serveur (Phase 7). Aucune dépendance : seulement Node.js 18+.
 // Lancement : node server.js   (ou double-clic sur lancer-serveur.bat)
 const http = require('http')
 const fs = require('fs')
@@ -519,6 +519,7 @@ const BADGES = [
   { id: 'loyal', name: 'Fidèle', emoji: '🔥', desc: '7 jours de suite de récompense quotidienne', bonus: 100, test: (u) => u.stats.maxStreak >= 7 },
   { id: 'rich', name: 'Riche', emoji: '💰', desc: 'Gagner 1000 pièces en tout', bonus: 0, test: (u) => u.stats.earned >= 1000 },
   { id: 'collector', name: 'Collectionneur', emoji: '🛍️', desc: 'Posséder 5 objets de la boutique', bonus: 50, test: (u) => u.inventory.length >= 5 },
+  { id: 'gamer', name: 'Gamer', emoji: '🎮', desc: 'Ajouter 5 jeux à ta collection', bonus: 30, test: (u) => (u.games || []).length >= 5 },
 ]
 const STAT_KEYS = ['messages', 'images', 'reactions', 'clips', 'voice_min', 'screen_min', 'earned', 'maxStreak']
 
@@ -592,6 +593,70 @@ setInterval(() => {
   }
 }, Number(process.env.TICK_MS) || 60000)
 
+// ---------- Jeux (collection du profil) ----------
+const GAME_STATUS = ['playing', 'completed', 'backlog', 'wishlist']
+const PLATFORMS = ['PC', 'PlayStation', 'Xbox', 'Switch', 'Mobile', 'Autre']
+function cleanGames(list) {
+  if (!Array.isArray(list) || list.length > 100) throw bad('100 jeux maximum.')
+  const seen = new Set()
+  return list.map((g) => {
+    const gname = name(g && g.name, 1, 60, 'Nom du jeu')
+    if (seen.has(nameKey(gname))) throw bad(`« ${gname} » est déjà dans ta collection.`)
+    seen.add(nameKey(gname))
+    if (!GAME_STATUS.includes(g.status)) throw bad('Statut de jeu invalide.')
+    if (!PLATFORMS.includes(g.platform)) throw bad('Plateforme invalide.')
+    const hours = Number(g.hours || 0)
+    if (!Number.isFinite(hours) || hours < 0 || hours > 99999) throw bad('Heures de jeu invalides.')
+    const rating = g.rating === undefined || g.rating === null || g.rating === 0 ? 0 : Number(g.rating)
+    if (!Number.isInteger(rating) || rating < 0 || rating > 5) throw bad('Note : 0 à 5.')
+    return {
+      name: gname, status: g.status, platform: g.platform, hours: Math.round(hours * 10) / 10, rating,
+      favorite: Boolean(g.favorite), emoji: freeText(g.emoji, 8, 'Emoji').replace(/\n/g, '') || '🎮',
+      note: freeText(g.note, 120, 'Note').replace(/\n/g, ' '),
+    }
+  })
+}
+
+// ---------- Connexion avec Google ----------
+// Le navigateur de l'utilisateur ouvre la page /google de CE serveur, Google lui renvoie un jeton,
+// et l'appli récupère la session en interrogeant /api/google/poll (aucun mot de passe Google n'est vu).
+const googleStates = new Map() // state -> { userId|null, result, expires }
+const TOKENINFO = process.env.GOOGLE_TOKENINFO_URL || 'https://oauth2.googleapis.com/tokeninfo'
+async function verifyGoogle(credential) {
+  const r = await fetch(`${TOKENINFO}?id_token=${encodeURIComponent(credential)}`)
+  const info = await r.json().catch(() => ({}))
+  if (!r.ok || !info.sub) throw new HttpError(401, 'Connexion Google refusée.')
+  if (info.aud !== config.googleClientId) throw new HttpError(401, 'Ce jeton Google ne vient pas de cette appli.')
+  if (!['https://accounts.google.com', 'accounts.google.com'].includes(info.iss)) throw new HttpError(401, 'Jeton Google invalide.')
+  if (String(info.email_verified) !== 'true') throw new HttpError(401, "L'adresse Google n'est pas vérifiée.")
+  if (Number(info.exp) * 1000 < Date.now()) throw new HttpError(401, 'Jeton Google expiré.')
+  return info
+}
+setInterval(() => {
+  for (const [k, v] of googleStates) if (v.expires < Date.now()) googleStates.delete(k)
+}, 60000)
+const esc = (v) => String(v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]))
+function googlePage(state) {
+  return `<!doctype html><html lang="fr"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MonApp — Connexion Google</title>
+<style>body{font-family:system-ui,sans-serif;background:#0b0b14;color:#f2f3f5;display:grid;place-items:center;min-height:100vh;margin:0}
+.c{background:#14142a;padding:28px;border-radius:16px;max-width:380px;width:92%;text-align:center}input{width:100%;padding:10px;border-radius:8px;border:1px solid #333;background:#0d0d1f;color:#fff;margin:8px 0;box-sizing:border-box}
+#msg{margin-top:14px;font-size:14px}</style>
+<div class="c"><h2>Connexion avec Google</h2>
+<p style="color:#9a9cb5;font-size:14px">Première connexion ? Entre le code d'inscription du serveur (sinon laisse vide).</p>
+<input id="code" placeholder="Code d'inscription" autocapitalize="characters">
+<div id="g" style="display:flex;justify-content:center;margin-top:10px"></div><div id="msg"></div></div>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<script>
+window.onload=function(){var t=setInterval(function(){if(!window.google||!google.accounts)return;clearInterval(t);
+google.accounts.id.initialize({client_id:${JSON.stringify(config.googleClientId || '')},callback:async function(r){
+var m=document.getElementById('msg');m.textContent='Vérification…';
+try{var res=await fetch('/api/google/complete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({state:${JSON.stringify(state)},credential:r.credential,signupCode:document.getElementById('code').value})});
+var j=await res.json();m.textContent=res.ok?'✅ Connecté ! Tu peux fermer cette page et retourner dans MonApp.':('❌ '+(j.error||'Erreur'));}catch(e){m.textContent='❌ Serveur injoignable'}}});
+google.accounts.id.renderButton(document.getElementById('g'),{theme:'filled_blue',size:'large',text:'continue_with',locale:'fr'});},300)}
+</script></html>`
+}
+
 // ---------- Limite anti-force-brute ----------
 const attempts = new Map()
 function limit(req) {
@@ -664,7 +729,7 @@ async function route(req, res) {
   let m
 
   // ===== Public =====
-  if (p === '/api/ping' && method === 'GET') return send(res, 200, { ok: true, app: 'MonApp', version: 6, signupCode: Boolean(config.codeInscription) })
+  if (p === '/api/ping' && method === 'GET') return send(res, 200, { ok: true, app: 'MonApp', version: 7, signupCode: Boolean(config.codeInscription), google: Boolean(config.googleClientId) })
 
   if ((m = /^\/api\/avatar\/([\w-]+)$/.exec(p)) && method === 'GET') return serveDataUrl(res, db.users[m[1]]?.avatar)
   if ((m = /^\/api\/banner\/([\w-]+)$/.exec(p)) && method === 'GET') return serveDataUrl(res, db.users[m[1]]?.banner)
@@ -689,6 +754,66 @@ async function route(req, res) {
       }, 10000)
     })
     return
+  }
+
+  if (p === '/google' && method === 'GET') {
+    const st = googleStates.get(url.searchParams.get('state') || '')
+    if (!config.googleClientId || !st) return send(res, 404, '<p>Lien expiré ou Google non configuré.</p>', { 'Content-Type': 'text/html; charset=utf-8' })
+    return send(res, 200, googlePage(url.searchParams.get('state')), { 'Content-Type': 'text/html; charset=utf-8', 'Referrer-Policy': 'no-referrer' })
+  }
+
+  if (p === '/api/google/start' && method === 'POST') {
+    if (!config.googleClientId) throw bad("La connexion Google n'est pas activée sur ce serveur.")
+    limit(req)
+    let userId = null
+    if (/^Bearer /.test(req.headers.authorization || '')) userId = authUser(req).user.id // liaison d'un compte existant
+    const state = crypto.randomBytes(24).toString('hex')
+    googleStates.set(state, { userId, result: null, expires: Date.now() + 5 * 60 * 1000 })
+    return send(res, 200, { state })
+  }
+
+  if (p === '/api/google/complete' && method === 'POST') {
+    limit(req)
+    const b = await readBody(req)
+    const st = googleStates.get(String(b.state || ''))
+    if (!st || st.result) throw bad('Lien expiré : recommence depuis MonApp.')
+    const info = await verifyGoogle(String(b.credential || ''))
+    if (st.userId) {
+      const me = db.users[st.userId]
+      if (Object.values(db.users).some((u) => u.id !== me.id && u.google && u.google.sub === info.sub)) throw new HttpError(409, 'Ce compte Google est déjà lié à un autre compte.')
+      me.google = { sub: info.sub, email: info.email }
+      save()
+      st.result = { linked: true }
+      return send(res, 200, { ok: true })
+    }
+    let u = Object.values(db.users).find((x) => x.google && x.google.sub === info.sub)
+    if (!u) {
+      if (config.codeInscription && String(b.signupCode || '').trim().toUpperCase() !== String(config.codeInscription).toUpperCase())
+        throw new HttpError(403, "Première connexion : le code d'inscription du serveur est nécessaire.")
+      let base = String(info.given_name || info.name || String(info.email).split('@')[0] || 'Joueur').normalize('NFC')
+      base = [...base].filter((ch) => !INVISIBLE.test(ch)).join('').trim().slice(0, 28) || 'Joueur'
+      let username = base
+      for (let i = 2; usernameTaken(username); i++) username = `${base.slice(0, 28)}${i}`
+      u = {
+        id: uid(), username, salt: '', hash: '', googleOnly: true, google: { sub: info.sub, email: info.email },
+        bio: '', avatar: null, avatarV: 0, status: 'online', name_color: '#ffffff', name_font: 'sans', name_effect: 'none',
+        pronouns: '', location: '', custom_status: null, links: [], banner_color: '', banner: null, bannerV: 0,
+        created: Date.now(), lastSeen: Date.now(),
+      }
+      db.users[u.id] = u
+    }
+    st.result = { token: newSession(u.id), user: pub(u, true) }
+    save()
+    return send(res, 200, { ok: true })
+  }
+
+  if (p === '/api/google/poll' && method === 'GET') {
+    const key = url.searchParams.get('state') || ''
+    const st = googleStates.get(key)
+    if (!st) throw new HttpError(404, 'Lien expiré.')
+    if (!st.result) return send(res, 200, { pending: true })
+    googleStates.delete(key)
+    return send(res, 200, st.result)
   }
 
   if (p === '/api/signup' && method === 'POST') {
@@ -718,7 +843,7 @@ async function route(req, res) {
     const b = await readBody(req)
     const key = nameKey(String(b.username || '').trim())
     const user = Object.values(db.users).find((u) => nameKey(u.username) === key)
-    if (!user || typeof b.password !== 'string' || !sameHash(hash(b.password, user.salt), user.hash))
+    if (!user || user.googleOnly || typeof b.password !== 'string' || !sameHash(hash(b.password, user.salt), user.hash))
       throw new HttpError(401, 'Pseudo ou mot de passe incorrect.')
     user.lastSeen = Date.now()
     return send(res, 200, { token: newSession(user.id), user: pub(user, true) })
@@ -790,6 +915,32 @@ async function route(req, res) {
     save()
     for (const s of Object.values(db.servers)) if (s.members[user.id]) broadcast(s, 'refresh', {})
     return send(res, 200, { economy: ecoView(user) })
+  }
+
+  // ----- Compte Google / jeux -----
+  if (p === '/api/me/google' && method === 'GET') return send(res, 200, { linked: Boolean(user.google), email: user.google?.email || null, googleOnly: Boolean(user.googleOnly) })
+  if (p === '/api/me/google' && method === 'DELETE') {
+    if (user.googleOnly) throw bad("Ton compte n'a pas de mot de passe : tu ne peux pas délier Google (tu serais bloqué dehors).")
+    delete user.google
+    save()
+    return send(res, 200, { ok: true })
+  }
+
+  if (p === '/api/me/games' && method === 'GET') return send(res, 200, { games: user.games || [], public: user.gamesPublic !== false })
+  if (p === '/api/me/games' && method === 'PUT') {
+    const b = await readBody(req)
+    user.games = cleanGames(b.games)
+    if (b.public !== undefined) user.gamesPublic = Boolean(b.public)
+    eco(user)
+    checkBadges(user)
+    save()
+    return send(res, 200, { games: user.games, public: user.gamesPublic !== false })
+  }
+  if ((m = /^\/api\/users\/([\w-]+)\/games$/.exec(p)) && method === 'GET') {
+    const u = db.users[m[1]]
+    if (!u) throw new HttpError(404, 'Utilisateur introuvable.')
+    if (u.id !== user.id && u.gamesPublic === false) return send(res, 200, { games: [], hidden: true })
+    return send(res, 200, { games: u.games || [] })
   }
 
   // ----- Profil -----
@@ -1412,7 +1563,7 @@ server.listen(PORT, () => {
   console.log('  MonApp — serveur démarré')
   console.log(`  Port            : ${PORT}`)
   console.log(`  Données         : ${DATA_DIR}`)
-  console.log('  Version         : Phase 6')
+  console.log('  Version         : Phase 7')
   console.log(`  Code d'inscription : ${config.codeInscription || '(aucun)'}`)
   console.log(`  Adresse locale  : http://localhost:${PORT}`)
   console.log('  Laisse cette fenêtre ouverte. Ctrl+C pour arrêter.')
