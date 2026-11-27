@@ -1,5 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useState } from 'react'
 import * as api from './api'
+import { startEvents, stopEvents } from './events'
+import { leaveVoice } from './voice'
 import type { User } from './api'
 
 type Phase = 'loading' | 'out' | 'in' | 'unreachable'
@@ -54,6 +56,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => clearInterval(t)
   }, [phase])
 
+  // Flux d'événements en direct : actif tant qu'on est connecté
+  useEffect(() => {
+    if (phase !== 'in') return
+    startEvents()
+    return () => stopEvents()
+  }, [phase])
+
   const login = useCallback(async (u: string, p: string) => {
     setProfile(await api.signIn(u, p))
     setPhase('in')
@@ -63,6 +72,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setPhase('in')
   }, [])
   const logout = useCallback(async () => {
+    await leaveVoice()
     await api.signOut()
     setProfile(null)
     setPhase('out')

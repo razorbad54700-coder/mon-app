@@ -26,7 +26,7 @@ export function startEvents() {
   if (!base || !token) return
   const es = new EventSource(`${base}/api/events?token=${encodeURIComponent(token)}`)
   source = es
-  for (const type of ['message', 'message_deleted', 'reaction', 'refresh']) {
+  for (const type of ['message', 'message_deleted', 'reaction', 'refresh', 'voice', 'signal']) {
     es.addEventListener(type, (ev) => {
       let data: unknown = {}
       try {

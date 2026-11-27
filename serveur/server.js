@@ -172,6 +172,7 @@ function serverView(s, user) {
     invite: isStaff(role) ? s.invite : null,
     channels: s.channels,
     memberCount: Object.keys(s.members).length,
+    voice: Object.fromEntries(s.channels.filter((c) => voice[c.id]).map((c) => [c.id, voiceView(c.id)])),
   }
 }
 
@@ -226,6 +227,7 @@ function removeImage(name) {
   if (name) fs.unlink(path.join(IMG_DIR, name), () => {})
 }
 function purgeChannel(cid) {
+  delete voice[cid]
   const list = msgs[cid]
   if (!list) return
   for (const m of list) removeImage(m.image)
@@ -250,6 +252,25 @@ function sendLimit(userId) {
   if (list.length >= 6) throw new HttpError(429, 'Tu écris trop vite, doucement 🙂')
   list.push(now)
   sendTimes.set(userId, list)
+}
+
+// ---------- Vocal (la voix passe en direct entre les joueurs ; le serveur sert seulement d'intermédiaire) ----------
+const MAX_VOICE = 8
+const voice = {} // idDuSalon -> Map(idUtilisateur -> { muted, deafened, camera })
+
+const voiceView = (cid) => [...(voice[cid] || new Map())].map(([userId, st]) => ({ userId, ...st }))
+const voiceChannelOf = (userId) => Object.keys(voice).find((cid) => voice[cid].has(userId))
+function announceVoice(cid) {
+  const s = Object.values(db.servers).find((x) => x.channels.some((c) => c.id === cid))
+  if (s) broadcast(s, 'voice', { channelId: cid, participants: voiceView(cid) })
+}
+function leaveVoice(userId) {
+  for (const cid of Object.keys(voice)) {
+    if (voice[cid].delete(userId)) {
+      if (!voice[cid].size) delete voice[cid]
+      announceVoice(cid)
+    }
+  }
 }
 
 // ---------- Limite anti-force-brute ----------
@@ -334,7 +355,12 @@ async function route(req, res) {
     const c = { res, userId }
     clients.add(c)
     db.users[userId].lastSeen = Date.now()
-    res.on('close', () => clients.delete(c))
+    res.on('close', () => {
+      clients.delete(c)
+      setTimeout(() => {
+        if (![...clients].some((x) => x.userId === userId)) leaveVoice(userId)
+      }, 10000)
+    })
     return
   }
 
@@ -375,6 +401,7 @@ async function route(req, res) {
 
   if (p === '/api/logout' && method === 'POST') {
     delete db.sessions[token]
+    leaveVoice(user.id)
     save()
     return send(res, 200, { ok: true })
   }
@@ -430,7 +457,7 @@ async function route(req, res) {
     if (Object.values(db.servers).filter((s) => s.owner === user.id).length >= 10) throw bad('Maximum 10 serveurs par personne.')
     const s = {
       id: uid(), name, owner: user.id, invite: newInvite(), created: Date.now(),
-      channels: [{ id: uid(), name: 'général' }],
+      channels: [{ id: uid(), name: 'général', type: 'text' }, { id: uid(), name: 'vocal', type: 'voice' }],
       members: { [user.id]: 'owner' },
     }
     db.servers[s.id] = s
@@ -485,6 +512,7 @@ async function route(req, res) {
     const s = serverFor(user, m[1])
     if (s.members[user.id] === 'owner') throw bad('Le propriétaire ne peut pas quitter : supprime le serveur à la place.')
     delete s.members[user.id]
+    leaveVoice(user.id)
     save()
     broadcast(s, 'refresh', {}, [user.id])
     return send(res, 200, { ok: true })
@@ -503,7 +531,7 @@ async function route(req, res) {
     if (!isStaff(s.members[user.id])) throw new HttpError(403, 'Réservé aux admins.')
     const b = await readBody(req)
     if (s.channels.length >= 50) throw bad('Maximum 50 salons.')
-    s.channels.push({ id: uid(), name: cleanChannelName(b.name) })
+    s.channels.push({ id: uid(), name: cleanChannelName(b.name), type: b.type === 'voice' ? 'voice' : 'text' })
     save()
     broadcast(s, 'refresh', {})
     return send(res, 201, { server: serverView(s, user) })
@@ -540,14 +568,61 @@ async function route(req, res) {
     if (!theirs || m[2] === user.id || theirs === 'owner') throw bad('Impossible d\'exclure ce membre.')
     if (mine === 'admin' && theirs !== 'member') throw new HttpError(403, 'Un admin ne peut exclure que des membres.')
     delete s.members[m[2]]
+    leaveVoice(m[2])
     save()
     broadcast(s, 'refresh', {}, [m[2]])
+    return send(res, 200, { ok: true })
+  }
+
+  if (p === '/api/ice' && method === 'GET') {
+    const iceServers = [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }]
+    if (config.turn && config.turn.urls) iceServers.push(config.turn)
+    return send(res, 200, { iceServers })
+  }
+
+  if ((m = /^\/api\/voice\/([\w-]+)\/join$/.exec(p)) && method === 'POST') {
+    const s = findChannelServer(user, m[1])
+    const channel = s.channels.find((c) => c.id === m[1])
+    if (channel.type !== 'voice') throw bad("Ce n'est pas un salon vocal.")
+    if (voice[m[1]] && !voice[m[1]].has(user.id) && voice[m[1]].size >= MAX_VOICE)
+      throw bad(`Salon vocal plein (${MAX_VOICE} personnes max).`)
+    if (voiceChannelOf(user.id) !== m[1]) {
+      leaveVoice(user.id)
+      voice[m[1]] = voice[m[1]] || new Map()
+      voice[m[1]].set(user.id, { muted: false, deafened: false, camera: false })
+      announceVoice(m[1])
+    }
+    return send(res, 200, { participants: voiceView(m[1]) })
+  }
+
+  if (p === '/api/voice/leave' && method === 'POST') {
+    leaveVoice(user.id)
+    return send(res, 200, { ok: true })
+  }
+
+  if (p === '/api/voice/state' && method === 'POST') {
+    const cid = voiceChannelOf(user.id)
+    if (!cid) throw bad("Tu n'es pas dans un salon vocal.")
+    const b = await readBody(req)
+    const st = voice[cid].get(user.id)
+    for (const k of ['muted', 'deafened', 'camera']) if (typeof b[k] === 'boolean') st[k] = b[k]
+    announceVoice(cid)
+    return send(res, 200, { ok: true })
+  }
+
+  if (p === '/api/voice/signal' && method === 'POST') {
+    const cid = voiceChannelOf(user.id)
+    const b = await readBody(req, 100 * 1024)
+    if (!cid || typeof b.to !== 'string' || !voice[cid].has(b.to)) throw new HttpError(404, 'Participant introuvable.')
+    if (!b.data || typeof b.data !== 'object') throw bad('Signal invalide.')
+    for (const c of clients) if (c.userId === b.to) push(c, 'signal', { from: user.id, data: b.data })
     return send(res, 200, { ok: true })
   }
 
   if ((m = /^\/api\/channels\/([\w-]+)\/messages$/.exec(p))) {
     const s = findChannelServer(user, m[1])
     const cid = m[1]
+    if (s.channels.find((c) => c.id === cid).type === 'voice') throw bad('Ce salon est un salon vocal.')
     if (method === 'GET') {
       const q = new URL(req.url, 'http://x').searchParams
       const list = msgs[cid] || []
@@ -638,7 +713,7 @@ server.listen(PORT, () => {
   console.log('  MonApp — serveur démarré')
   console.log(`  Port            : ${PORT}`)
   console.log(`  Données         : ${DATA_DIR}`)
-  console.log('  Version         : Phase 3 (messages)')
+  console.log('  Version         : Phase 4 (vocal)')
   console.log(`  Code d'inscription : ${config.codeInscription || '(aucun)'}`)
   console.log(`  Adresse locale  : http://localhost:${PORT}`)
   console.log('  Laisse cette fenêtre ouverte. Ctrl+C pour arrêter.')

@@ -1,4 +1,4 @@
-const { app, BrowserWindow, shell } = require('electron')
+const { app, BrowserWindow, shell, session } = require('electron')
 const path = require('path')
 
 function createWindow() {
@@ -22,6 +22,11 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
+  // Autorise seulement le micro et la caméra (pour le vocal)
+  session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) => {
+    callback(permission === 'media')
+  })
+  session.defaultSession.setPermissionCheckHandler((_wc, permission) => permission === 'media')
   createWindow()
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()

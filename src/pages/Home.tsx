@@ -5,7 +5,9 @@ import { useAuth } from '../lib/auth'
 import Avatar from '../components/Avatar'
 import ServerModal from '../components/ServerModal'
 import ChatView from '../components/ChatView'
-import { startEvents, stopEvents, subscribe } from '../lib/events'
+import VoiceRoom from '../components/VoiceRoom'
+import { subscribe } from '../lib/events'
+import { leaveVoice, toggleDeafen, toggleMute, useVoice } from '../lib/voice'
 import { STATUSES, nameStyle, statusLabel } from '../lib/nameStyle'
 
 type View = 'channels' | 'main' | 'members'
@@ -15,6 +17,7 @@ const ROLE_LABEL: Record<api.Role, string> = { owner: 'Propriétaire', admin: 'A
 
 export default function Home() {
   const { profile, update, logout } = useAuth()
+  const v = useVoice()
   const [servers, setServers] = useState<api.ServerInfo[]>([])
   const [selId, setSelId] = useState<string | null>(null)
   const [chanId, setChanId] = useState<string | null>(null)
@@ -23,6 +26,7 @@ export default function Home() {
   const [modal, setModal] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [newChannel, setNewChannel] = useState<string | null>(null)
+  const [newChannelType, setNewChannelType] = useState<'text' | 'voice'>('text')
   const [renaming, setRenaming] = useState<string | null>(null)
   const [openMember, setOpenMember] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
@@ -61,17 +65,14 @@ export default function Home() {
   const latest = useRef({ refreshServers, refreshMembers })
   latest.current = { refreshServers, refreshMembers }
   useEffect(() => {
-    startEvents()
-    const off = subscribe((type) => {
+    return subscribe((type) => {
       if (type === 'refresh') {
         void latest.current.refreshServers()
         void latest.current.refreshMembers()
+      } else if (type === 'voice') {
+        void latest.current.refreshServers()
       }
     })
-    return () => {
-      off()
-      stopEvents()
-    }
   }, [])
 
   useEffect(() => {
@@ -167,25 +168,45 @@ export default function Home() {
                 className="row"
                 onSubmit={(e) => {
                   e.preventDefault()
-                  void act(() => api.createChannel(server.id, newChannel))
+                  void act(() => api.createChannel(server.id, newChannel, newChannelType))
                   setNewChannel(null)
                 }}
               >
                 <input value={newChannel} onChange={(e) => setNewChannel(e.target.value)} placeholder="nom-du-salon" maxLength={32} autoFocus />
+                <select style={{ width: 'auto' }} value={newChannelType} onChange={(e) => setNewChannelType(e.target.value as 'text' | 'voice')}>
+                  <option value="text">Texte</option>
+                  <option value="voice">Vocal</option>
+                </select>
                 <button className="small">OK</button>
               </form>
             )}
             <div className="channels">
               {server.channels.map((c) => (
-                <div key={c.id} className={'channel' + (c.id === channel?.id ? ' active' : '')}>
-                  <button className="chan-name" onClick={() => { setChanId(c.id); setView('main') }}># {c.name}</button>
-                  {isStaff && server.channels.length > 1 && (
-                    <button
-                      className="small ghost"
-                      title="Supprimer le salon"
-                      onClick={() => { if (confirm(`Supprimer le salon #${c.name} ?`)) void act(() => api.deleteChannel(server.id, c.id)) }}
-                    >✕</button>
-                  )}
+                <div key={c.id}>
+                  <div className={'channel' + (c.id === channel?.id ? ' active' : '')}>
+                    <button className="chan-name" onClick={() => { setChanId(c.id); setView('main') }}>
+                      {c.type === 'voice' ? '🔊' : '#'} {c.name}
+                    </button>
+                    {isStaff && server.channels.length > 1 && (
+                      <button
+                        className="small ghost"
+                        title="Supprimer le salon"
+                        onClick={() => { if (confirm(`Supprimer le salon ${c.name} ?`)) void act(() => api.deleteChannel(server.id, c.id)) }}
+                      >✕</button>
+                    )}
+                  </div>
+                  {c.type === 'voice' &&
+                    (server.voice?.[c.id] ?? []).map((p) => {
+                      const m = members.find((x) => x.id === p.userId)
+                      return (
+                        <div key={p.userId} className={'voice-user' + (v.speaking.includes(p.userId) ? ' speaking' : '')}>
+                          <Avatar url={m?.avatar_url ?? null} name={m?.username ?? '?'} size={22} />
+                          <span className="ellipsis">{m?.username ?? '…'}</span>
+                          {p.deafened ? ' 🎧✕' : p.muted ? ' 🔇' : ''}
+                          {p.camera ? ' 📷' : ''}
+                        </div>
+                      )
+                    })}
                 </div>
               ))}
             </div>
@@ -204,6 +225,20 @@ export default function Home() {
             <h2>Bienvenue 👋</h2>
             <p className="muted">Crée ton premier serveur ou rejoins celui d&apos;un ami avec son code d&apos;invitation.</p>
             <button onClick={() => setModal(true)}>Créer / rejoindre</button>
+          </div>
+        )}
+
+        {/* Barre d'appel */}
+        {v.channelId && (
+          <div className="callbar">
+            <div className="ellipsis">
+              🟢 Vocal : {servers.flatMap((s) => s.channels).find((c) => c.id === v.channelId)?.name ?? '…'}
+            </div>
+            <div className="row">
+              <button className={'small ' + (v.muted ? 'danger' : 'ghost')} title="Micro" onClick={toggleMute}>{v.muted ? '🔇' : '🎤'}</button>
+              <button className={'small ' + (v.deafened ? 'danger' : 'ghost')} title="Sourdine (couper le son)" onClick={toggleDeafen}>🎧</button>
+              <button className="small danger" title="Quitter le vocal" onClick={() => void leaveVoice()}>📞 Quitter</button>
+            </div>
           </div>
         )}
 
@@ -230,7 +265,11 @@ export default function Home() {
       <main className="chat">
         {error && <div className="banner">{error}</div>}
         {server && channel ? (
-          <ChatView key={channel.id} server={server} channel={channel} me={profile} members={members} />
+          channel.type === 'voice' ? (
+            <VoiceRoom key={channel.id} server={server} channel={channel} me={profile} members={members} />
+          ) : (
+            <ChatView key={channel.id} server={server} channel={channel} me={profile} members={members} />
+          )
         ) : (
           <div className="chat-body"><p className="muted">Choisis ou crée un serveur pour commencer.</p></div>
         )}

@@ -15,3 +15,9 @@ SERVEUR MonApp
    - sur ton PC :     http://localhost:3000
    - meme reseau wifi : http://IP-DE-TON-PC:3000
    - amis a distance : l'adresse donnee par ton tunnel (voir le guide)
+
+VOCAL
+-----
+La voix passe directement entre les joueurs. Si certains amis ne s'entendent pas (reseau tres restrictif),
+il faut un serveur TURN : ajoute dans data/config.json la ligne
+  "turn": { "urls": "turn:adresse:3478", "username": "...", "credential": "..." }

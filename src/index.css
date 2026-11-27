@@ -108,6 +108,20 @@ button.chip.danger { background: #f23f4333; color: #ff8a8d; }
 .attach { display: flex; align-items: center; gap: 12px; padding: 8px 18px; }
 .attach img { height: 64px; border-radius: 8px; }
 
+/* Vocal (Phase 4) */
+.voice-user { display: flex; align-items: center; gap: 8px; padding: 3px 8px 3px 26px; font-size: 14px; color: var(--muted); }
+.voice-user.speaking { color: var(--ok); }
+.voice-user.speaking .avatar img, .voice-user.speaking .avatar .ph { box-shadow: 0 0 0 2px var(--ok); }
+.callbar { background: #23a55a22; border: 1px solid #23a55a55; border-radius: 10px; padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; font-size: 14px; }
+.voice-grid { flex: 1; overflow-y: auto; padding: 18px; display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; align-content: start; }
+.tile { position: relative; background: var(--panel); border-radius: 14px; min-height: 170px; display: grid; place-items: center; overflow: hidden; border: 2px solid transparent; transition: border-color .15s, box-shadow .15s; }
+.tile.speaking { border-color: var(--ok); box-shadow: 0 0 18px #23a55a88; }
+.tile-video { width: 100%; height: 100%; object-fit: cover; background: #000; }
+.tile-video.mirror { transform: scaleX(-1); }
+.tile-name { position: absolute; left: 10px; bottom: 8px; background: #000a; padding: 3px 9px; border-radius: 8px; font-size: 14px; }
+.voice-controls { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; padding: 14px 18px; border-top: 1px solid #ffffff12; }
+button.danger { background: #f23f4333; color: #ff8a8d; }
+
 @media (max-width: 860px) {
   .app3 { grid-template-columns: 1fr; grid-template-rows: auto 1fr auto; grid-template-areas: "rail" "view" "nav"; }
   .rail { flex-direction: row; padding: 8px; overflow-x: auto; overflow-y: hidden; }

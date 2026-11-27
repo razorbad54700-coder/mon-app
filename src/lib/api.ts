@@ -13,7 +13,8 @@ export type User = {
   name_effect: string
 }
 export type Member = User & { role: Role }
-export type Channel = { id: string; name: string }
+export type Channel = { id: string; name: string; type?: 'text' | 'voice' }
+export type VoiceParticipant = { userId: string; muted: boolean; deafened: boolean; camera: boolean }
 export type ServerInfo = {
   id: string
   name: string
@@ -21,6 +22,7 @@ export type ServerInfo = {
   invite: string | null
   channels: Channel[]
   memberCount: number
+  voice: Record<string, VoiceParticipant[]>
 }
 
 const K_SERVER = 'monapp.server'
@@ -139,7 +141,8 @@ export const renameServer = (id: string, name: string) => call('PATCH', `/server
 export const deleteServer = (id: string) => call('DELETE', `/servers/${id}`)
 export const leaveServer = (id: string) => call('POST', `/servers/${id}/leave`)
 export const resetInvite = (id: string) => call('POST', `/servers/${id}/invite/reset`)
-export const createChannel = (id: string, name: string) => call('POST', `/servers/${id}/channels`, { name })
+export const createChannel = (id: string, name: string, type: 'text' | 'voice' = 'text') =>
+  call('POST', `/servers/${id}/channels`, { name, type })
 export const deleteChannel = (id: string, channelId: string) => call('DELETE', `/servers/${id}/channels/${channelId}`)
 export const listMembers = async (id: string) =>
   (await call<{ members: Member[] }>('GET', `/servers/${id}/members`)).members.map((m) => fixUser(m))
@@ -232,3 +235,12 @@ export function imageToUpload(file: File): Promise<string> {
     img.src = url
   })
 }
+
+// ---------- Vocal ----------
+export const getIce = async () => (await call<{ iceServers: RTCIceServer[] }>('GET', '/ice')).iceServers
+export const joinVoiceChannel = async (channelId: string) =>
+  (await call<{ participants: VoiceParticipant[] }>('POST', `/voice/${channelId}/join`)).participants
+export const leaveVoiceChannel = () => call('POST', '/voice/leave')
+export const setVoiceState = (state: { muted: boolean; deafened: boolean; camera: boolean }) =>
+  call('POST', '/voice/state', state)
+export const sendSignal = (to: string, data: unknown) => call('POST', '/voice/signal', { to, data })
