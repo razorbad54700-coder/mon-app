@@ -1,7 +1,13 @@
-# MonApp — Phase 5
+# MonApp — Phase 6
 
 - **Appli** (React + Vite) : `.exe` Windows (Electron) et `.apk` Android (Capacitor), compilés par GitHub Actions.
 - **Serveur** (dossier `serveur/`) : Node.js sans dépendances, à lancer sur ton PC (comme un serveur Minecraft).
+
+## Nouveautés Phase 6
+- **Pièces 🪙** : récompense quotidienne (50, jusqu'à 100 avec une série), quêtes du jour (3 par jour), bonus de badges.
+- **Quêtes** : messages, réactions, images, clips, vocal à plusieurs (pas en sourdine), partage d'écran. Tout est compté par le serveur.
+- **Badges** : 8 badges automatiques, visibles sur le profil.
+- **Boutique** : cadres d'avatar, effets de bannière, effets de pseudo (animés) et titres. Page « 🪙 Boutique » depuis ta carte en bas à gauche.
 
 ## Nouveautés Phase 5
 - **Rôles** illimités (50) avec couleur, hiérarchie (↑/↓) et 20 permissions ; permissions de base « @everyone » ; propriétaire / administrateur.

@@ -11,7 +11,7 @@ import MemberCard from '../components/MemberCard'
 import { playMessageSound } from '../lib/sounds'
 import { subscribe } from '../lib/events'
 import { leaveVoice, toggleDeafen, toggleMute, useVoice } from '../lib/voice'
-import { STATUSES, nameStyle, statusLabel } from '../lib/nameStyle'
+import { STATUSES, fxClass, nameStyle, statusLabel } from '../lib/nameStyle'
 
 type View = 'channels' | 'main' | 'members'
 const errMsg = (e: unknown) => (e instanceof Error ? e.message : 'Erreur')
@@ -29,6 +29,7 @@ export default function Home() {
   const [newChannel, setNewChannel] = useState<string | null>(null)
   const [newChannelType, setNewChannelType] = useState<'text' | 'voice'>('text')
   const [settings, setSettings] = useState(false)
+  const [toast, setToast] = useState<string | null>(null)
   const [unread, setUnread] = useState<Record<string, number>>({})
   const [openMember, setOpenMember] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
@@ -75,6 +76,9 @@ export default function Home() {
         void latest.current.refreshMembers()
       } else if (type === 'voice') {
         void latest.current.refreshServers()
+      } else if (type === 'notice') {
+        setToast(data.text)
+        setTimeout(() => setToast(null), 6000)
       } else if (type === 'message') {
         const cur = open.current
         if (data.author?.id === cur.me) return
@@ -245,9 +249,9 @@ export default function Home() {
         {/* Ma carte */}
         <div className="me">
           <div className="row">
-            <Avatar url={profile.avatar_url} name={profile.username} status={profile.status} size={40} />
+            <Avatar url={profile.avatar_url} name={profile.username} status={profile.status} size={40} frame={profile.frame} />
             <div style={{ minWidth: 0 }}>
-              <div className="ellipsis" style={nameStyle(profile.name_color, profile.name_font, profile.name_effect)}>{profile.username}</div>
+              <div className={'ellipsis ' + (fxClass(profile.name_fx) ?? '')} style={nameStyle(profile.name_color, profile.name_font, profile.name_effect)}>{profile.username}</div>
               <div className="muted ellipsis">{profile.custom_status ? `${profile.custom_status.emoji} ${profile.custom_status.text}` : statusLabel(profile.status)}</div>
             </div>
           </div>
@@ -256,6 +260,7 @@ export default function Home() {
           </select>
           <div className="row" style={{ marginTop: 8 }}>
             <Link to="/profile"><button className="small ghost">Réglages</button></Link>
+            <Link to="/boutique"><button className="small">🪙 Boutique</button></Link>
             <button className="small ghost" onClick={() => void logout()}>Déconnexion</button>
           </div>
         </div>
@@ -263,6 +268,7 @@ export default function Home() {
 
       {/* Zone principale */}
       <main className="chat">
+        {toast && <div className="toast" onClick={() => setToast(null)}>{toast}</div>}
         {error && <div className="banner">{error}</div>}
         {server && channel ? (
           channel.type === 'voice' ? (
@@ -286,9 +292,10 @@ export default function Home() {
                 const css = nameStyle(rc && m.name_color === '#ffffff' && m.name_effect === 'none' ? rc : m.name_color, m.name_font, m.name_effect)
                 return (
                   <button key={m.id} className={'member' + (m.status === 'offline' ? ' off' : '')} onClick={() => setOpenMember(m.id)}>
-                    <Avatar url={m.avatar_url} name={m.username} status={m.status} size={34} />
+                    <Avatar url={m.avatar_url} name={m.username} status={m.status} size={34} frame={m.frame} />
                     <span style={{ minWidth: 0 }}>
-                      <span className="ellipsis" style={{ display: 'block', ...css }}>{api.displayName(m)}</span>
+                      <span className={'ellipsis ' + (fxClass(m.name_fx) ?? '')} style={{ display: 'block', ...css }}>{api.displayName(m)}</span>
+                      {m.title && <span className="title-tag" style={{ display: 'block', margin: 0 }}>{m.title}</span>}
                       {m.custom_status && <span className="muted ellipsis" style={{ display: 'block', fontSize: 12 }}>{m.custom_status.emoji} {m.custom_status.text}</span>}
                     </span>
                   </button>

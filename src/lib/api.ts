@@ -14,9 +14,20 @@ export type User = {
   name_color: string
   name_font: string
   name_effect: string
+  frame: string | null
+  name_fx: string | null
+  title: string | null
 }
 export type ProfileLink = { label: string; url: string }
-export type FullProfile = User & { location: string; links: ProfileLink[]; banner_url: string | null; created: number }
+export type FullProfile = User & {
+  location: string
+  links: ProfileLink[]
+  banner_url: string | null
+  created: number
+  banner_fx: string | null
+  badges: string[]
+  coins?: number
+}
 
 export const PERM_LIST = [
   { key: 'administrator', label: 'Administrateur', hint: 'Toutes les permissions, sans exception', group: 'Général' },
@@ -293,7 +304,7 @@ export function imageToAvatar(file: File, size = 128, jpeg = false): Promise<str
 }
 
 // ---------- Messages ----------
-export type Author = Pick<User, 'id' | 'username' | 'avatar_url' | 'name_color' | 'name_font' | 'name_effect'> & { nick: string | null; role_color: string | null }
+export type Author = Pick<User, 'id' | 'username' | 'avatar_url' | 'name_color' | 'name_font' | 'name_effect' | 'frame' | 'name_fx' | 'title'> & { nick: string | null; role_color: string | null }
 export type Message = {
   id: string
   channelId: string
@@ -363,3 +374,24 @@ export const joinVoiceChannel = async (channelId: string) =>
 export const leaveVoiceChannel = () => call('POST', '/voice/leave')
 export const setVoiceState = (state: Partial<Omit<VoiceParticipant, 'userId'>>) => call('POST', '/voice/state', state)
 export const sendSignal = (to: string, data: unknown) => call('POST', '/voice/signal', { to, data })
+
+// ---------- Économie ----------
+export type ShopItem = { id: string; slot: 'frame' | 'banner_fx' | 'name_fx' | 'title'; name: string; emoji: string; price: number; value?: string }
+export type Quest = { id: string; label: string; goal: number; reward: number; progress: number; claimed: boolean }
+export type BadgeInfo = { id: string; name: string; emoji: string; desc: string; bonus: number; earned: boolean }
+export type Economy = {
+  coins: number
+  daily: { canClaim: boolean; streak: number; reward: number }
+  quests: Quest[]
+  badges: BadgeInfo[]
+  stats: Record<string, number>
+  inventory: string[]
+  equipped: Partial<Record<ShopItem['slot'], string>>
+  shop: ShopItem[]
+}
+export const getEconomy = () => call<Economy>('GET', '/economy')
+export const claimDaily = () => call<{ reward: number; economy: Economy }>('POST', '/economy/daily')
+export const claimQuest = (id: string) => call<{ reward: number; economy: Economy }>('POST', `/economy/quests/${id}/claim`)
+export const buyItem = async (itemId: string) => (await call<{ economy: Economy }>('POST', '/shop/buy', { itemId })).economy
+export const equipItem = async (slot: ShopItem['slot'], itemId: string | null) =>
+  (await call<{ economy: Economy }>('POST', '/shop/equip', { slot, itemId })).economy

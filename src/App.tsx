@@ -4,6 +4,7 @@ import Login from './pages/Login'
 import Signup from './pages/Signup'
 import Home from './pages/Home'
 import ProfilePage from './pages/ProfilePage'
+import ShopPage from './pages/ShopPage'
 
 export default function App() {
   const { phase, retry, logout } = useAuth()
@@ -37,6 +38,7 @@ export default function App() {
     <Routes>
       <Route path="/" element={<Home />} />
       <Route path="/profile" element={<ProfilePage />} />
+      <Route path="/boutique" element={<ShopPage />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   )

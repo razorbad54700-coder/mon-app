@@ -30,3 +30,6 @@ export const STATUSES = [
 ] as const
 
 export const statusLabel = (id: string) => STATUSES.find((s) => s.id === id)?.label ?? ''
+
+// Classe CSS des effets animés achetés dans la boutique
+export const fxClass = (fx?: string | null) => (fx ? 'fx ' + fx : undefined)

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import * as api from '../lib/api'
 import Avatar from './Avatar'
-import { nameStyle } from '../lib/nameStyle'
+import { fxClass, nameStyle } from '../lib/nameStyle'
 import { canShareScreen, discardClip, joinVoice, leaveVoice, startClip, startScreen, stopClip, stopScreen, toggleCamera, toggleDeafen, toggleMute, useVoice } from '../lib/voice'
 import { BUILTIN } from '../lib/sounds'
 
@@ -102,10 +102,10 @@ export default function VoiceRoom({
               {inRoom && p.camera && stream ? (
                 <Video stream={stream} mirror={p.userId === me.id} />
               ) : (
-                <Avatar url={(p.userId === me.id ? me.avatar_url : m?.avatar_url) ?? null} name={name} size={84} />
+                <Avatar url={(p.userId === me.id ? me.avatar_url : m?.avatar_url) ?? null} name={name} size={84} frame={p.userId === me.id ? me.frame : m?.frame} />
               )}
               <div className="tile-name">
-                <span style={m ? nameStyle(m.name_color, m.name_font, m.name_effect) : undefined}>{m ? api.displayName(m) : name}</span>
+                <span className={fxClass(m?.name_fx)} style={m ? nameStyle(m.name_color, m.name_font, m.name_effect) : undefined}>{m ? api.displayName(m) : name}</span>
                 {p.deafened ? ' 🎧✕' : p.muted ? ' 🔇' : ''}{p.screen ? ' 🖥' : ''}{p.recording ? ' 🔴' : ''}
               </div>
             </div>

@@ -164,3 +164,29 @@ html[data-compact="true"] .msg-body { padding-left: 0; }
 html[data-compact="true"] .msg-head .avatar { display: none; }
 html[data-motion="reduced"] *, html[data-motion="reduced"] *::before { transition: none !important; animation: none !important; }
 @media (max-width: 860px) { .roles-layout { grid-template-columns: 1fr; } }
+
+/* Phase 6 : cosmétiques, boutique, quêtes */
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes hue { to { filter: hue-rotate(360deg); } }
+@keyframes pulse { 50% { opacity: .55; transform: scale(1.04); } }
+@keyframes slide { to { background-position: 200% 0; } }
+@keyframes drift { to { background-position: 0 -60px, 40px -90px, -30px -40px; } }
+.avatar.frame_gold img, .avatar.frame_gold .ph { box-shadow: 0 0 0 3px #f0b232, 0 0 10px #f0b232aa; }
+.avatar.frame_neon img, .avatar.frame_neon .ph { box-shadow: 0 0 0 3px #00e5ff, 0 0 14px #00e5ff, 0 0 26px #7c5cff; }
+.avatar.frame_rainbow img, .avatar.frame_rainbow .ph { box-shadow: 0 0 0 3px #ff4ecd, 0 0 12px #ff4ecd; animation: hue 3s linear infinite; }
+.avatar.frame_fire img, .avatar.frame_fire .ph { box-shadow: 0 0 0 3px #ff7a45, 0 0 12px #f23f43, 0 0 22px #f0b232; animation: pulse 1.2s ease-in-out infinite; }
+.fx.nfx_rainbow { background: linear-gradient(90deg, #ff4e4e, #ffd24e, #4eff7a, #4ecbff, #b04eff, #ff4e4e) 0 0 / 200% 100%; -webkit-background-clip: text; background-clip: text; color: transparent !important; text-shadow: none !important; animation: slide 3s linear infinite; }
+.fx.nfx_pulse { animation: pulse 1.4s ease-in-out infinite; display: inline-block; }
+.fx.nfx_shimmer { background: linear-gradient(110deg, currentColor 35%, #fff 50%, currentColor 65%) 0 0 / 200% 100%; -webkit-background-clip: text; background-clip: text; color: transparent !important; text-shadow: none !important; animation: slide 2.2s linear infinite; }
+.bfx_aurora { background: linear-gradient(120deg, #00e5ff, #7c5cff, #23a55a, #00e5ff) 0 0 / 300% 100% !important; animation: slide 6s linear infinite; }
+.bfx_stars { background: radial-gradient(2px 2px at 20px 30px, #fff, transparent), radial-gradient(2px 2px at 70px 70px, #fff, transparent), radial-gradient(1.5px 1.5px at 120px 20px, #fff, transparent), #0d0b2e !important; background-size: 150px 90px !important; animation: drift 8s linear infinite; }
+.bfx_fire { background: linear-gradient(0deg, #f23f43, #f0b232 60%, #3a0d0d) 0 0 / 100% 200% !important; animation: pulse 2s ease-in-out infinite; }
+.title-tag { display: inline-block; margin-left: 6px; padding: 0 8px; border-radius: 8px; font-size: 11px; font-weight: 700; background: #7c5cff44; color: #cfc6ff; vertical-align: middle; }
+.badges { display: flex; gap: 6px; font-size: 22px; margin: 6px 0; }
+.toast { background: #23a55a33; color: #7ee2a8; padding: 10px 14px; text-align: center; cursor: pointer; font-weight: 700; }
+.shop-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 10px; margin-top: 8px; }
+.shop-item { background: var(--panel2); border-radius: 12px; padding: 12px; display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center; font-size: 14px; }
+.shop-item.locked { opacity: .45; }
+.quest { background: var(--panel2); border-radius: 12px; padding: 12px; margin-bottom: 10px; display: flex; flex-direction: column; gap: 6px; }
+.bar { height: 8px; background: #0d0d1f; border-radius: 4px; overflow: hidden; }
+.bar > div { height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent2)); transition: width .3s; }

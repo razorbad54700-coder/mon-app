@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import * as api from '../lib/api'
 import { subscribe } from '../lib/events'
 import Avatar from './Avatar'
-import { nameStyle } from '../lib/nameStyle'
+import { fxClass, nameStyle } from '../lib/nameStyle'
 
 const errMsg = (e: unknown) => (e instanceof Error ? e.message : 'Erreur')
 const fmt = (t: number) =>
@@ -170,8 +170,9 @@ export default function ChatView({
             <div key={m.id} className={'msg' + (active === m.id ? ' active' : '')} onClick={() => setActive(active === m.id ? null : m.id)}>
               {head && (
                 <div className="msg-head">
-                  <Avatar url={m.author.avatar_url} name={m.author.username} size={36} />
-                  <span style={nameCss}>{api.displayName(m.author)}</span>
+                  <Avatar url={m.author.avatar_url} name={m.author.username} size={36} frame={m.author.frame} />
+                  <span className={fxClass(m.author.name_fx)} style={nameCss}>{api.displayName(m.author)}</span>
+                  {m.author.title && <span className="title-tag">{m.author.title}</span>}
                   <span className="muted">{fmt(m.created)}</span>
                 </div>
               )}

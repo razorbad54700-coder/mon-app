@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import * as api from '../lib/api'
 import Avatar from './Avatar'
-import { nameStyle, statusLabel } from '../lib/nameStyle'
+import { fxClass, nameStyle, statusLabel } from '../lib/nameStyle'
+import { BADGE_EMOJI } from '../lib/cosmetics'
 
 const errMsg = (e: unknown) => (e instanceof Error ? e.message : 'Erreur')
 
@@ -42,14 +43,16 @@ export default function MemberCard({
   return (
     <div className="overlay" onClick={onClose}>
       <div className="card profile-card" onClick={(e) => e.stopPropagation()}>
-        <div className="banner-img" style={{ background: prof?.banner_url ? `center/cover url(${prof.banner_url})` : u.banner_color || 'linear-gradient(90deg, var(--accent), #00e5ff55)' }} />
+        <div className={'banner-img ' + (prof?.banner_fx ?? '')} style={{ background: prof?.banner_url ? `center/cover url(${prof.banner_url})` : u.banner_color || 'linear-gradient(90deg, var(--accent), #00e5ff55)' }} />
         <div className="row" style={{ marginTop: -34, padding: '0 6px' }}>
-          <Avatar url={u.avatar_url} name={u.username} status={u.status} size={72} />
+          <Avatar url={u.avatar_url} name={u.username} status={u.status} size={72} frame={u.frame} />
           <div style={{ minWidth: 0 }}>
-            <div className="ellipsis" style={{ fontSize: 20, ...nameStyle(u.name_color, u.name_font, u.name_effect) }}>{api.displayName(member)}{member.isOwner && ' 👑'}</div>
+            <div className={'ellipsis ' + (fxClass(u.name_fx) ?? '')} style={{ fontSize: 20, ...nameStyle(u.name_color, u.name_font, u.name_effect) }}>{api.displayName(member)}{member.isOwner && ' 👑'}</div>
             <div className="muted">{member.nick ? `${u.username} · ` : ''}{u.pronouns}{u.pronouns && ' · '}{statusLabel(u.status)}</div>
           </div>
         </div>
+        {u.title && <div className="title-tag">{u.title}</div>}
+        {prof && prof.badges.length > 0 && <div className="badges">{prof.badges.map((b) => <span key={b} title={b}>{BADGE_EMOJI[b] ?? '🏅'}</span>)}</div>}
         {u.custom_status && <p>{u.custom_status.emoji} {u.custom_status.text}</p>}
         {u.bio && <p style={{ whiteSpace: 'pre-wrap' }}>{u.bio}</p>}
         {prof?.location && <div className="muted">📍 {prof.location}</div>}

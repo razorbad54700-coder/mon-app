@@ -1,4 +1,4 @@
-// MonApp — serveur (Phase 5). Aucune dépendance : seulement Node.js 18+.
+// MonApp — serveur (Phase 6). Aucune dépendance : seulement Node.js 18+.
 // Lancement : node server.js   (ou double-clic sur lancer-serveur.bat)
 const http = require('http')
 const fs = require('fs')
@@ -154,6 +154,9 @@ function pub(u, self) {
     name_color: u.name_color,
     name_font: u.name_font,
     name_effect: u.name_effect,
+    frame: u.equipped?.frame || null,
+    name_fx: u.equipped?.name_fx || null,
+    title: SHOP_BY[u.equipped?.title]?.value || null,
   }
 }
 const fullProfile = (u, self) => ({
@@ -162,6 +165,8 @@ const fullProfile = (u, self) => ({
   links: u.links || [],
   banner_url: u.banner ? `/api/banner/${u.id}?v=${u.bannerV || 0}` : null,
   created: u.created,
+  banner_fx: u.equipped?.banner_fx || null,
+  badges: (u.badges || []).map((b) => b.id),
 })
 const usernameTaken = (n, exceptId) =>
   Object.values(db.users).some((u) => u.id !== exceptId && nameKey(u.username) === nameKey(n))
@@ -390,8 +395,8 @@ const channelOf = (s, cid) => s.channels.find((c) => c.id === cid)
 function msgView(m, s) {
   const u = db.users[m.author]
   const author = u
-    ? (({ id, username, avatar_url, name_color, name_font, name_effect }) => ({ id, username, avatar_url, name_color, name_font, name_effect }))(pub(u, false))
-    : { id: m.author, username: 'Ancien membre', avatar_url: null, name_color: '#9a9cb5', name_font: 'sans', name_effect: 'none' }
+    ? (({ id, username, avatar_url, name_color, name_font, name_effect, frame, name_fx, title }) => ({ id, username, avatar_url, name_color, name_font, name_effect, frame, name_fx, title }))(pub(u, false))
+    : { id: m.author, username: 'Ancien membre', avatar_url: null, name_color: '#9a9cb5', name_font: 'sans', name_effect: 'none', frame: null, name_fx: null, title: null }
   author.nick = s.members[m.author]?.nick || null
   author.role_color = roleColor(s, m.author)
   return {
@@ -417,6 +422,11 @@ function pushMessage(s, cid, user, content, files) {
   const list = (msgs[cid] = msgs[cid] || [])
   const msg = { id: uid(), channelId: cid, author: user.id, content, image: files.image || null, clip: files.clip || null, created: Date.now(), reactions: {} }
   list.push(msg)
+  if (files.clip) track(user, 'clips')
+  else {
+    if (files.image) track(user, 'images')
+    if (content.length >= 3 || files.image) track(user, 'messages')
+  }
   while (list.length > MAX_PER_CHANNEL) removeMessageFiles(list.shift())
   saveMsgs()
   const view = msgView(msg, s)
@@ -467,6 +477,120 @@ function leaveVoice(userId) {
   }
 }
 const soundTimes = new Map()
+
+// ---------- Économie : pièces, quêtes, badges, boutique ----------
+const today = () => new Date().toLocaleDateString('sv')
+const yesterday = () => new Date(Date.now() - 864e5).toLocaleDateString('sv')
+const SHOP = [
+  { id: 'frame_gold', slot: 'frame', name: 'Cadre doré', emoji: '🟡', price: 150 },
+  { id: 'frame_neon', slot: 'frame', name: 'Cadre néon', emoji: '💠', price: 200 },
+  { id: 'frame_rainbow', slot: 'frame', name: 'Cadre arc-en-ciel (animé)', emoji: '🌈', price: 400 },
+  { id: 'frame_fire', slot: 'frame', name: 'Cadre de feu (animé)', emoji: '🔥', price: 500 },
+  { id: 'bfx_aurora', slot: 'banner_fx', name: 'Bannière aurore (animée)', emoji: '🌌', price: 300 },
+  { id: 'bfx_stars', slot: 'banner_fx', name: 'Bannière étoilée (animée)', emoji: '✨', price: 350 },
+  { id: 'bfx_fire', slot: 'banner_fx', name: 'Bannière de braises (animée)', emoji: '🌋', price: 450 },
+  { id: 'nfx_rainbow', slot: 'name_fx', name: 'Pseudo arc-en-ciel (animé)', emoji: '🌈', price: 400 },
+  { id: 'nfx_pulse', slot: 'name_fx', name: 'Pseudo qui pulse', emoji: '💓', price: 250 },
+  { id: 'nfx_shimmer', slot: 'name_fx', name: 'Pseudo scintillant', emoji: '💎', price: 300 },
+  { id: 'title_legend', slot: 'title', name: 'Titre « Légende »', emoji: '👑', price: 200, value: 'Légende' },
+  { id: 'title_pro', slot: 'title', name: 'Titre « Pro Gamer »', emoji: '🎮', price: 200, value: 'Pro Gamer' },
+  { id: 'title_chief', slot: 'title', name: 'Titre « Chef de meute »', emoji: '🐺', price: 250, value: 'Chef de meute' },
+  { id: 'title_night', slot: 'title', name: 'Titre « Oiseau de nuit »', emoji: '🦉', price: 150, value: 'Oiseau de nuit' },
+]
+const SHOP_BY = Object.fromEntries(SHOP.map((i) => [i.id, i]))
+const SLOTS = ['frame', 'banner_fx', 'name_fx', 'title']
+const QUESTS = [
+  { id: 'msg10', stat: 'messages', goal: 10, reward: 30, label: 'Envoyer 10 messages' },
+  { id: 'msg30', stat: 'messages', goal: 30, reward: 60, label: 'Envoyer 30 messages' },
+  { id: 'react5', stat: 'reactions', goal: 5, reward: 25, label: 'Réagir à 5 messages' },
+  { id: 'voice10', stat: 'voice_min', goal: 10, reward: 40, label: "Passer 10 min en vocal avec quelqu'un" },
+  { id: 'voice30', stat: 'voice_min', goal: 30, reward: 90, label: "Passer 30 min en vocal avec quelqu'un" },
+  { id: 'screen5', stat: 'screen_min', goal: 5, reward: 40, label: "Partager ton écran 5 min" },
+  { id: 'img2', stat: 'images', goal: 2, reward: 30, label: 'Envoyer 2 images' },
+  { id: 'clip1', stat: 'clips', goal: 1, reward: 50, label: 'Envoyer un clip' },
+]
+const QUEST_BY = Object.fromEntries(QUESTS.map((q) => [q.id, q]))
+const BADGES = [
+  { id: 'first_msg', name: 'Premier mot', emoji: '🎉', desc: 'Envoyer ton premier message', bonus: 20, test: (u) => u.stats.messages >= 1 },
+  { id: 'chatty', name: 'Bavard', emoji: '💬', desc: 'Envoyer 500 messages', bonus: 100, test: (u) => u.stats.messages >= 500 },
+  { id: 'talker', name: 'Voix d\'or', emoji: '🎙️', desc: '60 minutes en vocal', bonus: 60, test: (u) => u.stats.voice_min >= 60 },
+  { id: 'streamer', name: 'Streamer', emoji: '🖥️', desc: "30 minutes de partage d'écran", bonus: 80, test: (u) => u.stats.screen_min >= 30 },
+  { id: 'clipper', name: 'Clipper', emoji: '🎬', desc: 'Envoyer un clip', bonus: 40, test: (u) => u.stats.clips >= 1 },
+  { id: 'loyal', name: 'Fidèle', emoji: '🔥', desc: '7 jours de suite de récompense quotidienne', bonus: 100, test: (u) => u.stats.maxStreak >= 7 },
+  { id: 'rich', name: 'Riche', emoji: '💰', desc: 'Gagner 1000 pièces en tout', bonus: 0, test: (u) => u.stats.earned >= 1000 },
+  { id: 'collector', name: 'Collectionneur', emoji: '🛍️', desc: 'Posséder 5 objets de la boutique', bonus: 50, test: (u) => u.inventory.length >= 5 },
+]
+const STAT_KEYS = ['messages', 'images', 'reactions', 'clips', 'voice_min', 'screen_min', 'earned', 'maxStreak']
+
+function pickQuests(userId, d) {
+  const key = (q) => crypto.createHash('sha256').update(userId + d + q.id).digest().readUInt32BE(0)
+  return [...QUESTS].sort((a, b) => key(a) - key(b)).slice(0, 3).map((q) => q.id)
+}
+function eco(u) {
+  u.coins ??= 0
+  u.stats ??= {}
+  for (const k of STAT_KEYS) u.stats[k] ??= 0
+  u.badges ??= []
+  u.inventory ??= []
+  u.equipped ??= {}
+  u.daily ??= { last: null, streak: 0 }
+  const d = today()
+  if (!u.quests || u.quests.day !== d) u.quests = { day: d, ids: pickQuests(u.id, d), progress: {}, claimed: [] }
+  return u
+}
+function notify(u, text) {
+  for (const c of clients) if (c.userId === u.id) push(c, 'notice', { text })
+}
+function earn(u, n) {
+  u.coins += n
+  u.stats.earned += n
+}
+function checkBadges(u) {
+  for (const b of BADGES) {
+    if (u.badges.some((x) => x.id === b.id) || !b.test(u)) continue
+    u.badges.push({ id: b.id, at: Date.now() })
+    if (b.bonus) earn(u, b.bonus)
+    notify(u, `${b.emoji} Badge « ${b.name} » débloqué !${b.bonus ? ` +${b.bonus} 🪙` : ''}`)
+  }
+}
+function track(u, stat, n = 1) {
+  eco(u)
+  u.stats[stat] += n
+  for (const qid of u.quests.ids) {
+    const q = QUEST_BY[qid]
+    if (q.stat === stat && !u.quests.claimed.includes(qid)) u.quests.progress[qid] = Math.min(q.goal, (u.quests.progress[qid] || 0) + n)
+  }
+  checkBadges(u)
+  save()
+}
+const dailyReward = (streak) => 50 + Math.min(Math.max(streak - 1, 0), 5) * 10
+function ecoView(u) {
+  eco(u)
+  const claimedToday = u.daily.last === today()
+  const nextStreak = claimedToday ? u.daily.streak : u.daily.last === yesterday() ? u.daily.streak + 1 : 1
+  return {
+    coins: u.coins,
+    daily: { canClaim: !claimedToday, streak: u.daily.streak, reward: dailyReward(nextStreak) },
+    quests: u.quests.ids.map((id) => ({ ...QUEST_BY[id], stat: undefined, progress: u.quests.progress[id] || 0, claimed: u.quests.claimed.includes(id) })),
+    badges: BADGES.map((b) => ({ id: b.id, name: b.name, emoji: b.emoji, desc: b.desc, bonus: b.bonus, earned: u.badges.some((x) => x.id === b.id) })),
+    stats: u.stats,
+    inventory: u.inventory,
+    equipped: u.equipped,
+    shop: SHOP,
+  }
+}
+// Toutes les minutes : temps de vocal (avec au moins une autre personne, pas en sourdine) et de partage d'écran
+setInterval(() => {
+  for (const members of Object.values(voice)) {
+    if (members.size < 2) continue
+    for (const [userId, st] of members) {
+      const u = db.users[userId]
+      if (!u || st.deafened) continue
+      track(u, 'voice_min')
+      if (st.screen) track(u, 'screen_min')
+    }
+  }
+}, Number(process.env.TICK_MS) || 60000)
 
 // ---------- Limite anti-force-brute ----------
 const attempts = new Map()
@@ -540,7 +664,7 @@ async function route(req, res) {
   let m
 
   // ===== Public =====
-  if (p === '/api/ping' && method === 'GET') return send(res, 200, { ok: true, app: 'MonApp', version: 5, signupCode: Boolean(config.codeInscription) })
+  if (p === '/api/ping' && method === 'GET') return send(res, 200, { ok: true, app: 'MonApp', version: 6, signupCode: Boolean(config.codeInscription) })
 
   if ((m = /^\/api\/avatar\/([\w-]+)$/.exec(p)) && method === 'GET') return serveDataUrl(res, db.users[m[1]]?.avatar)
   if ((m = /^\/api\/banner\/([\w-]+)$/.exec(p)) && method === 'GET') return serveDataUrl(res, db.users[m[1]]?.banner)
@@ -610,8 +734,66 @@ async function route(req, res) {
     return send(res, 200, { ok: true })
   }
 
+  // ----- Économie -----
+  if (p === '/api/economy' && method === 'GET') return send(res, 200, ecoView(user))
+
+  if (p === '/api/economy/daily' && method === 'POST') {
+    eco(user)
+    if (user.daily.last === today()) throw bad("Tu as déjà récupéré ta récompense aujourd'hui.")
+    user.daily.streak = user.daily.last === yesterday() ? user.daily.streak + 1 : 1
+    user.daily.last = today()
+    user.stats.maxStreak = Math.max(user.stats.maxStreak, user.daily.streak)
+    const reward = dailyReward(user.daily.streak)
+    earn(user, reward)
+    checkBadges(user)
+    save()
+    return send(res, 200, { reward, economy: ecoView(user) })
+  }
+
+  if ((m = /^\/api\/economy\/quests\/([\w-]+)\/claim$/.exec(p)) && method === 'POST') {
+    eco(user)
+    const q = QUEST_BY[m[1]]
+    if (!q || !user.quests.ids.includes(q.id)) throw new HttpError(404, 'Quête introuvable.')
+    if (user.quests.claimed.includes(q.id)) throw bad('Récompense déjà récupérée.')
+    if ((user.quests.progress[q.id] || 0) < q.goal) throw bad("La quête n'est pas terminée.")
+    user.quests.claimed.push(q.id)
+    earn(user, q.reward)
+    checkBadges(user)
+    save()
+    return send(res, 200, { reward: q.reward, economy: ecoView(user) })
+  }
+
+  if (p === '/api/shop/buy' && method === 'POST') {
+    eco(user)
+    const b = await readBody(req)
+    const item = SHOP_BY[b.itemId]
+    if (!item) throw new HttpError(404, 'Objet introuvable.')
+    if (user.inventory.includes(item.id)) throw bad('Tu possèdes déjà cet objet.')
+    if (user.coins < item.price) throw bad(`Il te manque ${item.price - user.coins} pièces.`)
+    user.coins -= item.price
+    user.inventory.push(item.id)
+    checkBadges(user)
+    save()
+    return send(res, 200, { economy: ecoView(user) })
+  }
+
+  if (p === '/api/shop/equip' && method === 'POST') {
+    eco(user)
+    const b = await readBody(req)
+    if (!SLOTS.includes(b.slot)) throw bad('Emplacement invalide.')
+    if (b.itemId === null) delete user.equipped[b.slot]
+    else {
+      const item = SHOP_BY[b.itemId]
+      if (!item || item.slot !== b.slot || !user.inventory.includes(item.id)) throw forbidden("Tu ne possèdes pas cet objet.")
+      user.equipped[b.slot] = item.id
+    }
+    save()
+    for (const s of Object.values(db.servers)) if (s.members[user.id]) broadcast(s, 'refresh', {})
+    return send(res, 200, { economy: ecoView(user) })
+  }
+
   // ----- Profil -----
-  if (p === '/api/me' && method === 'GET') return send(res, 200, { user: { ...pub(user, true), ...fullProfile(user, true) } })
+  if (p === '/api/me' && method === 'GET') return send(res, 200, { user: { ...pub(user, true), ...fullProfile(user, true), coins: eco(user).coins } })
 
   if (p === '/api/me' && method === 'PATCH') {
     const b = await readBody(req, 700 * 1024)
@@ -1186,7 +1368,10 @@ async function route(req, res) {
     const users = msg.reactions[b.emoji] || []
     const i = users.indexOf(user.id)
     if (i >= 0) users.splice(i, 1)
-    else users.push(user.id)
+    else {
+      users.push(user.id)
+      track(user, 'reactions')
+    }
     if (users.length) msg.reactions[b.emoji] = users
     else delete msg.reactions[b.emoji]
     saveMsgs()
@@ -1227,7 +1412,7 @@ server.listen(PORT, () => {
   console.log('  MonApp — serveur démarré')
   console.log(`  Port            : ${PORT}`)
   console.log(`  Données         : ${DATA_DIR}`)
-  console.log('  Version         : Phase 5')
+  console.log('  Version         : Phase 6')
   console.log(`  Code d'inscription : ${config.codeInscription || '(aucun)'}`)
   console.log(`  Adresse locale  : http://localhost:${PORT}`)
   console.log('  Laisse cette fenêtre ouverte. Ctrl+C pour arrêter.')
